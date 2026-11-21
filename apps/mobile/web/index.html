@@ -56,19 +56,31 @@
     }
 
     // Continuously ensure Flutter's Shadow DOM stays 100% transparent
+    // AND passes pointer events through to the Windy iframe on empty areas
     function ensureFlutterTransparent() {
       var pane = document.querySelector('flt-glass-pane');
       if (pane) {
         pane.style.setProperty('background', 'transparent', 'important');
         pane.style.setProperty('background-color', 'transparent', 'important');
+        // Allow clicks to pass through the glass pane to Windy on empty areas
+        pane.style.setProperty('pointer-events', 'none', 'important');
         if (pane.shadowRoot) {
           if (!pane.shadowRoot.getElementById('flutter-transparent-style')) {
             var style = document.createElement('style');
             style.id = 'flutter-transparent-style';
             style.textContent = `
-              :host, flt-scene-host, flt-scene, flt-canvas, canvas {
+              :host {
                 background: transparent !important;
                 background-color: transparent !important;
+                pointer-events: none !important;
+              }
+              flt-scene-host, flt-scene, flt-canvas, canvas {
+                background: transparent !important;
+                background-color: transparent !important;
+              }
+              /* Re-enable pointer events on all actual Flutter widget nodes */
+              flt-scene-host * {
+                pointer-events: auto !important;
               }
             `;
             pane.shadowRoot.appendChild(style);
