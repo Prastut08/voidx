@@ -24,20 +24,55 @@
     #windy-bg {
       position: fixed; top: 0; left: 0;
       width: 100%; height: 100%;
-      z-index: 2;
+      z-index: 1;
     }
     #windy-bg iframe {
       width: 100%; height: 100%; border: none;
     }
-    /* Flutter canvas sits below iframe */
-    flt-glass-pane, flt-scene-host, flt-scene,
-    flt-glass-pane canvas, flt-scene canvas, flt-scene-host canvas {
+    /* Flutter canvas sits at z-index: 2 */
+    flt-glass-pane {
+      position: fixed; top: 0; left: 0;
+      width: 100%; height: 100%;
+      z-index: 2 !important;
       background: transparent !important;
       background-color: transparent !important;
     }
-    canvas {
+    flt-scene-host, flt-scene,
+    flt-glass-pane canvas, flt-scene canvas, flt-scene-host canvas, canvas {
       background: transparent !important;
       background-color: transparent !important;
+    }
+    /* Floating toggle button in Bottom Left Corner */
+    #map-interact-toggle {
+      position: fixed;
+      bottom: 24px;
+      left: 20px;
+      z-index: 2147483647; /* Maximum z-index to stay above everything */
+      padding: 12px 18px;
+      border-radius: 30px;
+      border: 2px solid #1976d2;
+      background: #ffffff;
+      color: #1976d2;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s ease;
+      user-select: none;
+      pointer-events: auto !important;
+    }
+    #map-interact-toggle:hover {
+      background: #f0f7ff;
+      transform: scale(1.05);
+    }
+    #map-interact-toggle.map-active {
+      background: #1976d2;
+      color: #ffffff;
+      box-shadow: 0 6px 24px rgba(25, 118, 210, 0.45);
     }
   </style>
 
@@ -55,7 +90,7 @@
       }
     }
 
-    // Continuously ensure Flutter's Shadow DOM stays 100% transparent
+    // Keep Flutter Shadow DOM transparent without killing pointer-events
     function ensureFlutterTransparent() {
       var pane = document.querySelector('flt-glass-pane');
       if (pane) {
@@ -81,7 +116,7 @@
         }
       }
     }
-    setInterval(ensureFlutterTransparent, 200);
+    setInterval(ensureFlutterTransparent, 250);
 
     const serviceWorkerVersion = null;
   </script>
@@ -94,6 +129,46 @@
       src="https://embed.windy.com/embed2.html?lat=20.59&lon=78.96&detailLat=20.59&detailLon=78.96&zoom=5&level=surface&overlay=wind&product=ecmwf&menu=&message=true&marker=true&calendar=now&pressure=true&metricWind=default&metricTemp=default&radarRange=-1&key=OjwfppPns1vyuKYfXsKSdjiURjbPzdeT">
     </iframe>
   </div>
+
+  <!-- Mode Toggle Pill in Bottom Left Corner -->
+  <button id="map-interact-toggle" onclick="toggleMapMode()">
+    <span id="map-toggle-icon">🗺️</span>
+    <span id="map-toggle-label">Explore Map</span>
+  </button>
+
+  <script>
+    var isMapMode = false;
+    function toggleMapMode() {
+      isMapMode = !isMapMode;
+      var btn = document.getElementById('map-interact-toggle');
+      var label = document.getElementById('map-toggle-label');
+      var icon = document.getElementById('map-toggle-icon');
+      var windyBg = document.getElementById('windy-bg');
+      var pane = document.querySelector('flt-glass-pane');
+
+      if (isMapMode) {
+        // MAP INTERACTION MODE: Bring Windy iframe on TOP (z-index: 9999)
+        windyBg.style.setProperty('z-index', '9999', 'important');
+        btn.classList.add('map-active');
+        label.innerText = 'App Controls';
+        icon.innerText = '📱';
+        if (pane) {
+          pane.style.setProperty('opacity', '0.2', 'important');
+          pane.style.setProperty('pointer-events', 'none', 'important');
+        }
+      } else {
+        // APP CONTROLS MODE: Send Windy back down (z-index: 1)
+        windyBg.style.setProperty('z-index', '1', 'important');
+        btn.classList.remove('map-active');
+        label.innerText = 'Explore Map';
+        icon.innerText = '🗺️';
+        if (pane) {
+          pane.style.setProperty('opacity', '1', 'important');
+          pane.style.setProperty('pointer-events', 'auto', 'important');
+        }
+      }
+    }
+  </script>
   <script>
     window.addEventListener('load', function(ev) {
       _flutter.loader.loadEntrypoint({
