@@ -79,22 +79,10 @@ class _MyAppState extends State<MyApp> {
       ),
       home: Scaffold(
         backgroundColor: Colors.transparent,
-        body: IndexedStack(
-          index: _selectedIndex,
-          children: [
-            widget.phoneNumber == null
-                ? GetPhoneNumber()
-                : (!widget.permissionsGranted ? GetPermissions() : Home()),
-            widget.permissionsGranted ? WeatherScreen() : GetPermissions(),
-            //<------------------ADD MORE OPTIONS AS NEEDED----------------->
-          ],
-        ),
-        bottomNavigationBar: widget.phoneNumber != null && widget.permissionsGranted
-            ? CustomNavigationBar(
-                selectedIndex: _selectedIndex,
-                onItemTapped: _onItemTapped,
-              )
-            : null,
+        body: widget.phoneNumber == null
+            ? GetPhoneNumber()
+            : (!widget.permissionsGranted ? GetPermissions() : Home()),
+        bottomNavigationBar: null,
       ),
     );
   }

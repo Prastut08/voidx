@@ -1115,7 +1115,6 @@ class _HomeState extends State<Home> {
           Column(
             children: [
               _buildTopFloatingBar(),
-              _buildFilterBar(),
               isOffline ? _buildOfflineWidget() : Container(),
             ],
           ),
