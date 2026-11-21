@@ -25,9 +25,23 @@
       position: fixed; top: 0; left: 0;
       width: 100%; height: 100%;
       z-index: 0;
+      pointer-events: auto !important;
     }
     #windy-bg iframe {
       width: 100%; height: 100%; border: none;
+      pointer-events: auto !important;
+    }
+    #flutter-hitzones {
+      position: fixed; top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 999999;
+    }
+    .flutter-btn-target {
+      pointer-events: auto !important;
+      cursor: pointer !important;
+      background: transparent !important;
+      -webkit-tap-highlight-color: transparent;
     }
     /* Flutter canvas sits on top, fully transparent background */
     flt-glass-pane, flt-scene-host, flt-scene,
@@ -55,45 +69,81 @@
       }
     }
 
+    var flutterInteractive = false;
+    function setFlutterInteractive(active) {
+      flutterInteractive = !!active;
+      applyFlutterState();
+    }
+
     // Continuously ensure Flutter's Shadow DOM stays 100% transparent
-    // AND passes pointer events through to the Windy iframe on empty areas
-    function ensureFlutterTransparent() {
+    // AND passes pointer events through to the Windy iframe when not in a modal
+    function applyFlutterState() {
       var pane = document.querySelector('flt-glass-pane');
+      var hz = document.getElementById('flutter-hitzones');
+      if (hz) {
+        hz.style.display = flutterInteractive ? 'none' : 'block';
+      }
       if (pane) {
         pane.style.setProperty('background', 'transparent', 'important');
         pane.style.setProperty('background-color', 'transparent', 'important');
-        // Allow clicks to pass through the glass pane to Windy on empty areas
-        pane.style.setProperty('pointer-events', 'none', 'important');
+        var pe = flutterInteractive ? 'auto' : 'none';
+        pane.style.setProperty('pointer-events', pe, 'important');
         if (pane.shadowRoot) {
-          if (!pane.shadowRoot.getElementById('flutter-transparent-style')) {
-            var style = document.createElement('style');
+          var style = pane.shadowRoot.getElementById('flutter-transparent-style');
+          if (!style) {
+            style = document.createElement('style');
             style.id = 'flutter-transparent-style';
-            style.textContent = `
-              :host {
-                background: transparent !important;
-                background-color: transparent !important;
-                pointer-events: none !important;
-              }
-              flt-scene-host, flt-scene, flt-canvas, canvas {
-                background: transparent !important;
-                background-color: transparent !important;
-              }
-              /* Re-enable pointer events on all actual Flutter widget nodes */
-              flt-scene-host * {
-                pointer-events: auto !important;
-              }
-            `;
             pane.shadowRoot.appendChild(style);
           }
+          style.textContent = `
+            :host {
+              background: transparent !important;
+              background-color: transparent !important;
+              pointer-events: ` + pe + ` !important;
+            }
+            flt-scene-host, flt-scene, flt-canvas, canvas {
+              background: transparent !important;
+              background-color: transparent !important;
+              pointer-events: ` + pe + ` !important;
+            }
+          `;
           var canvases = pane.shadowRoot.querySelectorAll('canvas');
           canvases.forEach(function(c) {
             c.style.setProperty('background', 'transparent', 'important');
             c.style.setProperty('background-color', 'transparent', 'important');
+            c.style.setProperty('pointer-events', pe, 'important');
           });
         }
       }
     }
-    setInterval(ensureFlutterTransparent, 200);
+    setInterval(applyFlutterState, 200);
+
+    function wireButton(id, fnName) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      var trigger = function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (typeof window[fnName] === 'function') {
+          window[fnName]();
+        }
+      };
+      el.addEventListener('click', trigger);
+      el.addEventListener('touchend', trigger, { passive: false });
+    }
+
+    function initHitzones() {
+      wireButton('btn-hamburger', 'flutterOpenDrawer');
+      wireButton('btn-sos', 'flutterSOS');
+      wireButton('btn-recenter', 'flutterRecenter');
+      wireButton('btn-action', 'flutterAction');
+    }
+
+    if (document.readyState === 'loading') {
+      window.addEventListener('DOMContentLoaded', initHitzones);
+    } else {
+      initHitzones();
+    }
 
     const serviceWorkerVersion = null;
   </script>
@@ -105,6 +155,18 @@
     <iframe id="windy-frame"
       src="https://embed.windy.com/embed2.html?lat=20.59&lon=78.96&detailLat=20.59&detailLon=78.96&zoom=5&level=surface&overlay=wind&product=ecmwf&menu=false&message=false&marker=false&calendar=now&pressure=false&metricWind=default&metricTemp=default&radarRange=-1&key=OjwfppPns1vyuKYfXsKSdjiURjbPzdeT">
     </iframe>
+  </div>
+
+  <!-- Transparent hit-targets positioned exactly over Flutter's buttons -->
+  <div id="flutter-hitzones">
+    <!-- Hamburger button top-left -->
+    <div id="btn-hamburger" class="flutter-btn-target" title="Menu" style="position: absolute; top: 8px; left: 14px; width: 54px; height: 54px; border-radius: 50%;"></div>
+    <!-- SOS button bottom-right -->
+    <div id="btn-sos" class="flutter-btn-target" title="SOS" style="position: absolute; bottom: 156px; right: 16px; width: 64px; height: 64px; border-radius: 12px;"></div>
+    <!-- Recenter button bottom-right -->
+    <div id="btn-recenter" class="flutter-btn-target" title="Recenter" style="position: absolute; bottom: 86px; right: 16px; width: 64px; height: 64px; border-radius: 50%;"></div>
+    <!-- Action button bottom-right -->
+    <div id="btn-action" class="flutter-btn-target" title="Action" style="position: absolute; bottom: 16px; right: 16px; width: 64px; height: 64px; border-radius: 50%;"></div>
   </div>
   <script>
     window.addEventListener('load', function(ev) {
