@@ -3,5 +3,10 @@
     {
       "mode": "auto"
     }
-  ]
+  ],
+  "dart.projectSearchPaths": [
+    ".",
+    "apps/mobile"
+  ],
+  "dart.flutterSdkPath": "C:\\Users\\Dell\\projects\\flutter"
 }

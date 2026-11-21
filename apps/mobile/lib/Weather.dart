@@ -4,7 +4,6 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'dart:convert';
 import 'package:flutter_config/flutter_config.dart';
 import 'package:http/http.dart' as http;
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:geolocator/geolocator.dart';
 
@@ -13,7 +12,7 @@ String _safeBackendUrl() {
     final val = FlutterConfig.get('BACKEND_URL');
     if (val != null && val.toString().isNotEmpty) return val.toString();
   } catch (_) {}
-  return 'http://172.25.179.250:8080';
+  return 'http://172.25.179.252:8080';
 }
 
 class WeatherScreen extends StatefulWidget {
@@ -50,8 +49,13 @@ class _WeatherScreenState extends State<WeatherScreen> {
   //   });
 
   Future<void> _loadWeatherData() async {
-    Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-    final response = await http.get(Uri.parse(_safeBackendUrl() + '/api/gemini?city='+position.latitude.toString()+','+position.longitude.toString()));
+    Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high);
+    final response = await http.get(Uri.parse(_safeBackendUrl() +
+        '/api/gemini?city=' +
+        position.latitude.toString() +
+        ',' +
+        position.longitude.toString()));
 
     if (response.statusCode == 200) {
       final jsonData = json.decode(response.body);

@@ -52,14 +52,16 @@ void main() async {
   var phoneNumber = prefs.getString('phoneNumber');
   bool permissionsGranted = prefs.getBool('permissionsGranted') ?? false;
 
-  runApp(MyApp(phoneNumber: phoneNumber, permissionsGranted: permissionsGranted));
+  runApp(
+      MyApp(phoneNumber: phoneNumber, permissionsGranted: permissionsGranted));
 }
 
 class MyApp extends StatefulWidget {
   final String? phoneNumber;
   final bool permissionsGranted;
 
-  MyApp({Key? key, required this.phoneNumber, required this.permissionsGranted}) : super(key: key);
+  MyApp({Key? key, required this.phoneNumber, required this.permissionsGranted})
+      : super(key: key);
 
   @override
   _MyAppState createState() => _MyAppState();
@@ -68,8 +70,21 @@ class MyApp extends StatefulWidget {
 class _MyAppState extends State<MyApp> {
   int _selectedIndex = 0;
 
+  Widget _buildBody() {
+    if (widget.phoneNumber == null) {
+      return GetPhoneNumber();
+    }
+    if (!widget.permissionsGranted) {
+      return GetPermissions();
+    }
+    return _selectedIndex == 0 ? Home() : WeatherScreen();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final bool isSetupComplete =
+        widget.phoneNumber != null && widget.permissionsGranted;
+
     return MaterialApp(
       title: 'Sahaya',
       theme: ThemeData(
@@ -79,10 +94,13 @@ class _MyAppState extends State<MyApp> {
       ),
       home: Scaffold(
         backgroundColor: Colors.transparent,
-        body: widget.phoneNumber == null
-            ? GetPhoneNumber()
-            : (!widget.permissionsGranted ? GetPermissions() : Home()),
-        bottomNavigationBar: null,
+        body: _buildBody(),
+        bottomNavigationBar: isSetupComplete
+            ? CustomNavigationBar(
+                selectedIndex: _selectedIndex,
+                onItemTapped: _onItemTapped,
+              )
+            : null,
       ),
     );
   }

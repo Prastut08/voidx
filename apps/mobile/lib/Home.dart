@@ -19,7 +19,7 @@ String _safeBackendUrl() {
     final val = FlutterConfig.get('BACKEND_URL');
     if (val != null && val.toString().isNotEmpty) return val.toString();
   } catch (_) {}
-  return 'http://172.25.179.250:8080';
+  return 'http://172.25.179.252:8080';
 }
 
 class Home extends StatefulWidget {

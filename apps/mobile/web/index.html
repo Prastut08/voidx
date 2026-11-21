@@ -24,12 +24,12 @@
     #windy-bg {
       position: fixed; top: 0; left: 0;
       width: 100%; height: 100%;
-      z-index: 0;
+      z-index: 2;
     }
     #windy-bg iframe {
       width: 100%; height: 100%; border: none;
     }
-    /* Flutter canvas sits on top, fully transparent background */
+    /* Flutter canvas sits below iframe */
     flt-glass-pane, flt-scene-host, flt-scene,
     flt-glass-pane canvas, flt-scene canvas, flt-scene-host canvas {
       background: transparent !important;
