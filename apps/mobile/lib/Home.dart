@@ -712,14 +712,16 @@ class _HomeState extends State<Home> {
   }
 
   void _showAssistanceDrawer() {
-    final items = _getFilteredItems();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (BuildContext bc) {
-        return Container(
-          height: MediaQuery.of(context).size.height * 0.65,
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setModalState) {
+            final items = isHelping ? _giveItems : _needItems;
+            return Container(
+          height: MediaQuery.of(context).size.height * 0.75,
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -739,8 +741,50 @@ class _HomeState extends State<Home> {
                   borderRadius: BorderRadius.circular(3),
                 ),
               ),
+              // Need Help / Give Help toggle inside drawer
               Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+                child: Container(
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Color(0xFFEEEEEE),
+                    borderRadius: BorderRadius.circular(30),
+                  ),
+                  child: CupertinoSlidingSegmentedControl<int>(
+                    children: {
+                      0: Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        child: Text(
+                          'Need Help',
+                          style: GoogleFonts.getFont('Lexend',
+                              fontWeight: FontWeight.w700,
+                              fontSize: 15,
+                              color: isHelping ? Colors.grey : Colors.redAccent),
+                        ),
+                      ),
+                      1: Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        child: Text(
+                          'Give Help',
+                          style: GoogleFonts.getFont('Lexend',
+                              fontWeight: FontWeight.w700,
+                              fontSize: 15,
+                              color: isHelping ? Colors.blue : Colors.grey),
+                        ),
+                      ),
+                    },
+                    groupValue: isHelping ? 1 : 0,
+                    onValueChanged: (int? value) {
+                      setState(() { isHelping = value == 1; });
+                      setModalState(() {});
+                    },
+                    backgroundColor: Color(0xFFEEEEEE),
+                    thumbColor: Colors.white,
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 10, 20, 4),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -769,7 +813,7 @@ class _HomeState extends State<Home> {
                 child: items.isEmpty
                     ? Center(
                         child: Text(
-                          'No locations found for this filter',
+                          'No locations found',
                           style: GoogleFonts.getFont('Lexend', color: Colors.grey),
                         ),
                       )
@@ -827,7 +871,7 @@ class _HomeState extends State<Home> {
                             ),
                             trailing: Icon(Icons.chevron_right, color: Colors.grey),
                             onTap: () {
-                              Navigator.pop(bc);
+                              Navigator.pop(context);
                               _showLocationDetails(context, item);
                             },
                           );
@@ -836,6 +880,8 @@ class _HomeState extends State<Home> {
               ),
             ],
           ),
+        );
+          },
         );
       },
     );
@@ -848,7 +894,7 @@ class _HomeState extends State<Home> {
       margin: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 10),
       child: Row(
         children: [
-          // 3 horizontal lines button (hamburger menu) at top left
+          // Hamburger menu button — tap to open drawer with toggle + assistance list
           Container(
             width: 48,
             height: 48,
@@ -861,60 +907,8 @@ class _HomeState extends State<Home> {
             ),
             child: IconButton(
               icon: Icon(Icons.menu, color: Colors.black87),
-              tooltip: 'View Assistance Locations',
+              tooltip: 'Menu',
               onPressed: _showAssistanceDrawer,
-            ),
-          ),
-          SizedBox(width: 12),
-          // Need Help / Give Help control
-          Expanded(
-            child: Container(
-              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: Color.fromARGB(255, 227, 227, 227),
-                borderRadius: BorderRadius.circular(30),
-                boxShadow: [
-                  BoxShadow(color: Colors.black26, blurRadius: 8, spreadRadius: 2)
-                ],
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: CupertinoSlidingSegmentedControl<int>(
-                      children: {
-                        0: Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 8),
-                          child: Text(
-                            'Need Help',
-                            style: GoogleFonts.getFont('Lexend',
-                                fontWeight: FontWeight.w700,
-                                fontSize: 16,
-                                color: isHelping ? Colors.grey : Colors.redAccent),
-                          ),
-                        ),
-                        1: Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 10),
-                          child: Text(
-                            'Give Help',
-                            style: GoogleFonts.getFont('Lexend',
-                                fontWeight: FontWeight.w700,
-                                fontSize: 16,
-                                color: isHelping ? Colors.blue : Colors.grey),
-                          ),
-                        ),
-                      },
-                      groupValue: isHelping ? 1 : 0,
-                      onValueChanged: (int? value) {
-                        setState(() {
-                          isHelping = value == 1;
-                        });
-                      },
-                      backgroundColor: Color.fromARGB(255, 227, 227, 227),
-                      thumbColor: Colors.white,
-                    ),
-                  ),
-                ],
-              ),
             ),
           ),
         ],
