@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html>
+
 <head>
   <base href="$FLUTTER_BASE_HREF">
   <meta charset="UTF-8">
@@ -9,45 +10,70 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <meta name="apple-mobile-web-app-title" content="mobile">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
-  <link rel="icon" type="image/png" href="favicon.png"/>
+  <link rel="icon" type="image/png" href="favicon.png" />
   <title>Sahaya</title>
   <link rel="manifest" href="manifest.json">
 
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body {
-      width: 100%; height: 100%;
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
       overflow: hidden;
       background: transparent !important;
       background-color: transparent !important;
     }
+
     #windy-bg {
-      position: fixed; top: 0; left: 0;
-      width: 100%; height: 100%;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
       z-index: 1;
     }
+
     #windy-bg iframe {
-      width: 100%; height: 100%; border: none;
+      width: 100%;
+      height: 100%;
+      border: none;
     }
+
     /* Flutter canvas sits at z-index: 2 */
     flt-glass-pane {
-      position: fixed; top: 0; left: 0;
-      width: 100%; height: 100%;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
       z-index: 2 !important;
       background: transparent !important;
       background-color: transparent !important;
     }
-    flt-scene-host, flt-scene,
-    flt-glass-pane canvas, flt-scene canvas, flt-scene-host canvas, canvas {
+
+    flt-scene-host,
+    flt-scene,
+    flt-glass-pane canvas,
+    flt-scene canvas,
+    flt-scene-host canvas,
+    canvas {
       background: transparent !important;
       background-color: transparent !important;
     }
+
     /* Floating toggle button in Bottom Left Corner */
     #map-interact-toggle {
       position: fixed;
       bottom: 24px;
       left: 20px;
-      z-index: 2147483647; /* Maximum z-index to stay above everything */
+      z-index: 2147483647;
+      /* Maximum z-index to stay above everything */
       padding: 12px 18px;
       border-radius: 30px;
       border: 2px solid #1976d2;
@@ -57,7 +83,7 @@
       font-size: 14px;
       font-weight: 700;
       cursor: pointer;
-      box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
       display: flex;
       align-items: center;
       gap: 8px;
@@ -65,10 +91,12 @@
       user-select: none;
       pointer-events: auto !important;
     }
+
     #map-interact-toggle:hover {
       background: #f0f7ff;
       transform: scale(1.05);
     }
+
     #map-interact-toggle.map-active {
       background: #1976d2;
       color: #ffffff;
@@ -90,15 +118,26 @@
       }
     }
 
+    var flutterInteractive = false;
+    function setFlutterInteractive(active) {
+      flutterInteractive = !!active;
+      applyFlutterState();
+    }
+
     // Keep Flutter Shadow DOM transparent without killing pointer-events
     function ensureFlutterTransparent() {
       var pane = document.querySelector('flt-glass-pane');
+      var hz = document.getElementById('flutter-hitzones');
+      if (hz) {
+        hz.style.display = flutterInteractive ? 'none' : 'block';
+      }
       if (pane) {
         pane.style.setProperty('background', 'transparent', 'important');
         pane.style.setProperty('background-color', 'transparent', 'important');
         if (pane.shadowRoot) {
-          if (!pane.shadowRoot.getElementById('flutter-transparent-style')) {
-            var style = document.createElement('style');
+          var style = pane.shadowRoot.getElementById('flutter-transparent-style');
+          if (!style) {
+            style = document.createElement('style');
             style.id = 'flutter-transparent-style';
             style.textContent = `
               :host, flt-scene-host, flt-scene, flt-canvas, canvas {
@@ -109,9 +148,10 @@
             pane.shadowRoot.appendChild(style);
           }
           var canvases = pane.shadowRoot.querySelectorAll('canvas');
-          canvases.forEach(function(c) {
+          canvases.forEach(function (c) {
             c.style.setProperty('background', 'transparent', 'important');
             c.style.setProperty('background-color', 'transparent', 'important');
+            c.style.setProperty('pointer-events', pe, 'important');
           });
         }
       }
@@ -122,6 +162,7 @@
   </script>
   <script src="flutter.js" defer></script>
 </head>
+
 <body>
   <!-- Windy map as full-screen background -->
   <div id="windy-bg">
@@ -170,13 +211,13 @@
     }
   </script>
   <script>
-    window.addEventListener('load', function(ev) {
+    window.addEventListener('load', function (ev) {
       _flutter.loader.loadEntrypoint({
         serviceWorker: {
           serviceWorkerVersion: serviceWorkerVersion,
         },
-        onEntrypointLoaded: function(engineInitializer) {
-          engineInitializer.initializeEngine().then(function(appRunner) {
+        onEntrypointLoaded: function (engineInitializer) {
+          engineInitializer.initializeEngine().then(function (appRunner) {
             appRunner.runApp();
           });
         }
@@ -184,4 +225,5 @@
     });
   </script>
 </body>
+
 </html>
