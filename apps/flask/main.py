@@ -10,6 +10,13 @@ from novu.api.subscriber import SubscriberApi
 from novu.dto.event import InputEventDto
 
 from firebase_admin import credentials, initialize_app, firestore
+from rescue_service import RescueCoordinationService
+from rag_service import EmergencyRAGService
+from sos_manager import SOSManager
+
+rescue_service = RescueCoordinationService()
+rag_service = EmergencyRAGService()
+sos_manager = SOSManager()
 load_dotenv()
 
 db = None
@@ -268,6 +275,122 @@ def sos():
     except Exception as e:
         return f"Error sending message: {e}", 500
 
+
+@app.route('/api/sos/create', methods=['POST'])
+def create_sos():
+    try:
+        data = request.get_json(force=True)
+        if not data:
+            return jsonify({"error": "Missing JSON payload"}), 400
+        
+        record = sos_manager.create_sos(data)
+        
+        # Match nearest suitable rescue units
+        lat = record["lat"]
+        lng = record["lng"]
+        cat = record["category"]
+        nearest_teams = rescue_service.find_nearest_teams(lat, lng, cat, max_results=3)
+        
+        return jsonify({
+            "success": True,
+            "sos": record,
+            "nearest_teams": nearest_teams,
+            "message": "SOS received and rescue coordination initiated"
+        }), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/sos/<sos_id>', methods=['GET'])
+def get_sos(sos_id):
+    record = sos_manager.get_sos(sos_id)
+    if not record:
+        return jsonify({"error": "Emergency request not found"}), 404
+    return jsonify(record), 200
+
+@app.route('/api/sos/<sos_id>/status', methods=['GET'])
+def get_sos_status(sos_id):
+    record = sos_manager.get_sos(sos_id)
+    if not record:
+        return jsonify({"error": "Emergency request not found"}), 404
+    return jsonify({
+        "sos_id": record["sos_id"],
+        "status": record["status"],
+        "assigned_team": record.get("assigned_team"),
+        "status_history": record.get("status_history", [])
+    }), 200
+
+@app.route('/api/sos/<sos_id>/acknowledge', methods=['POST'])
+def acknowledge_sos(sos_id):
+    try:
+        data = request.get_json(force=True) or {}
+        team_id = data.get("team_id", "NDRF-BN-04-A")
+        team_name = data.get("team_name", "NDRF Flood Rescue Unit Alpha")
+        
+        record = sos_manager.acknowledge_sos(sos_id, team_id, team_name)
+        if not record:
+            return jsonify({"error": "Emergency request not found"}), 404
+        return jsonify({
+            "success": True,
+            "sos": record,
+            "message": f"Assigned to {team_name} and marked EN ROUTE"
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/rescue/teams', methods=['GET'])
+def get_rescue_teams():
+    return jsonify({"teams": rescue_service.get_all_teams()}), 200
+
+@app.route('/api/rescue/nearby', methods=['GET'])
+def get_nearby_rescue():
+    try:
+        lat = float(request.args.get('lat', 12.9806))
+        lng = float(request.args.get('lng', 80.2132))
+        category = request.args.get('category', None)
+        max_res = int(request.args.get('limit', 5))
+        
+        nearest = rescue_service.find_nearest_teams(lat, lng, category, max_results=max_res)
+        return jsonify({
+            "user_location": {"lat": lat, "lng": lng},
+            "category": category,
+            "teams": nearest
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+@app.route('/api/offline/relay', methods=['POST'])
+def offline_relay():
+    try:
+        data = request.get_json(force=True) or {}
+        messages = data.get("messages", [])
+        if isinstance(messages, dict):
+            messages = [messages]
+            
+        result = sos_manager.receive_offline_relay(messages)
+        return jsonify({
+            "success": True,
+            "relay_result": result
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/offline/sync', methods=['POST'])
+def offline_sync():
+    return offline_relay()
+
+@app.route('/api/chat/emergency', methods=['GET'])
+def chat_emergency():
+    query = request.args.get('query', '')
+    category = request.args.get('category', None)
+    
+    if not query:
+        return jsonify({"error": "Missing query parameter"}), 400
+        
+    guidance = rag_service.generate_guidance(query, category)
+    return jsonify({
+        "query": query,
+        "guidance": guidance
+    }), 200
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=8080, debug=True)

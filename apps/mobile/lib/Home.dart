@@ -13,6 +13,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:internet_connection_checker/internet_connection_checker.dart';
 import 'package:http/http.dart' as http;
+import 'sos_chat_panel.dart';
 
 String _safeBackendUrl() {
   try {
@@ -28,8 +29,14 @@ class Home extends StatefulWidget {
 }
 class SOSButton extends StatelessWidget {
   final bool isHelping;
+  final double currentLat;
+  final double currentLng;
 
-  SOSButton({required this.isHelping});
+  SOSButton({
+    required this.isHelping,
+    this.currentLat = 12.9806,
+    this.currentLng = 80.2132,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -55,103 +62,28 @@ class SOSButton extends StatelessWidget {
               backgroundColor: const Color.fromARGB(255, 250, 121, 121),
             ),
           )
-        : SizedBox(); // If isHelping is false, return an empty SizedBox
+        : SizedBox();
   }
-  void _onSOSPressed(BuildContext context) async {
+
+  void _onSOSPressed(BuildContext context) {
     try {
       js.context.callMethod('setFlutterInteractive', [true]);
     } catch (_) {}
-    try {
-      // Request contacts permission
-      PermissionStatus permissionStatus = await Permission.contacts.request();
 
-      if (permissionStatus.isGranted) {
-        // Show loading dialog
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (BuildContext context) {
-            return AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(15.0),
-              ),
-              title: Text(
-                'Sending SOS',
-                style: TextStyle(fontFamily: GoogleFonts.kanit().fontFamily, fontSize: 18),
-              ),
-              content: SizedBox(
-                height: 8.5,
-                child: LinearProgressIndicator(
-                  minHeight: 2.0,
-                ),
-              ),
-            );
-          },
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (BuildContext bc) {
+        return SOSChatPanel(
+          currentLat: currentLat,
+          currentLng: currentLng,
+          backendUrl: _safeBackendUrl(),
+          onClose: () => Navigator.of(bc).pop(),
         );
-
-        // Wait for 5 seconds
-        await Future.delayed(Duration(seconds: 5));
-
-        // Close the loading dialog
-        Navigator.of(context).pop();
-
-        // Show alert
-        await showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (BuildContext context) {
-            return AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(15.0), 
-              ),
-              title: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Emergency Alert',
-                      style: TextStyle(fontFamily: GoogleFonts.getFont('Kanit').fontFamily, fontSize: 18),
-                    ),
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.close),
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                    },
-                  ),
-                ],
-              ),
-              content: SizedBox(
-                height: 40.0,
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 0.0),
-                  child: Text(
-                    'Your emergency contacts have been alerted.',
-                    style: TextStyle(fontFamily: GoogleFonts.getFont('Kanit').fontFamily),
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-
-        print('SOS sent!');
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Contacts permission required for SOS feature.',
-              style: TextStyle(fontFamily: GoogleFonts.getFont('Kanit').fontFamily),
-            ),
-          ),
-        );
-      }
-    } finally {
-      try {
-        js.context.callMethod('setFlutterInteractive', [false]);
-      } catch (_) {}
-    }
+      },
+    );
   }
-
 
   void _sendSOS(BuildContext context) async {
     final String message = 'SOS! I need help with the climate crisis!';
@@ -1168,7 +1100,11 @@ class _HomeState extends State<Home> {
           ),
           recenterBtn(),
           actionBtn(isHelping, selectedFilter),
-          SOSButton(isHelping: isHelping == true),
+          SOSButton(
+            isHelping: isHelping == true,
+            currentLat: currentLat,
+            currentLng: currentLng,
+          ),
         ],
       ),
     );
