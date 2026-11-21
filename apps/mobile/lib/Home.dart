@@ -1,0 +1,966 @@
+import 'package:flutter/material.dart';
+import 'dart:async';
+import 'dart:convert';
+import 'dart:js' as js;
+import 'package:flutter_config/flutter_config.dart';
+import 'package:telephony/telephony.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:internet_connection_checker/internet_connection_checker.dart';
+import 'package:http/http.dart' as http;
+
+String _safeBackendUrl() {
+  try {
+    final val = FlutterConfig.get('BACKEND_URL');
+    if (val != null && val.toString().isNotEmpty) return val.toString();
+  } catch (_) {}
+  return 'http://172.25.179.250:8080';
+}
+
+class Home extends StatefulWidget {
+  @override
+  _HomeState createState() => _HomeState();
+}
+class SOSButton extends StatelessWidget {
+  final bool isHelping;
+
+  SOSButton({required this.isHelping});
+
+  @override
+  Widget build(BuildContext context) {
+    return (!isHelping)
+        ? Positioned(
+            bottom: 160.0,
+            right: 20.0,
+            child: FloatingActionButton(
+              onPressed: () => _onSOSPressed(context),
+              child: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Text(
+                  'SOS',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              backgroundColor: const Color.fromARGB(255, 250, 121, 121),
+            ),
+          )
+        : SizedBox(); // If isHelping is false, return an empty SizedBox
+  }
+  void _onSOSPressed(BuildContext context) async {
+  // Request contacts permission
+  PermissionStatus permissionStatus = await Permission.contacts.request();
+
+ if (permissionStatus.isGranted) {
+    // Show loading dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15.0), // Decrease the border radius
+          ),
+          title: Text(
+            'Sending SOS',
+            style: TextStyle(fontFamily: GoogleFonts.kanit().fontFamily,fontSize: 18),
+          ),
+          content: SizedBox(
+            height: 8.5, // Decrease the height of the SizedBox
+            child: LinearProgressIndicator(
+              minHeight: 2.0, // Decrease the minHeight of the LinearProgressIndicator
+            ),
+          ),
+        );
+      },
+    );
+
+    // Wait for 5 seconds
+    await Future.delayed(Duration(seconds: 5));
+
+    // Close the loading dialog
+    Navigator.of(context).pop();
+
+    // Show alert
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15.0), 
+          ),
+          title: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Emergency Alert',
+                  style: TextStyle(fontFamily: GoogleFonts.getFont('Kanit').fontFamily,fontSize: 18),
+                ),
+              ),
+              IconButton(
+                icon: Icon(Icons.close),
+                onPressed: () {
+                  Navigator.of(context).pop(); // Close the alert
+                },
+              ),
+            ],
+          ),
+          content: SizedBox(
+            height: 40.0, // Fixed height
+            child: Padding(
+              padding: const EdgeInsets.only(top: 0.0),
+              child: Text(
+                'Your emergency contacts have been alerted.',
+                style: TextStyle(fontFamily: GoogleFonts.getFont('Kanit').fontFamily),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    // Implement your SOS functionality here
+    print('SOS sent!');
+  } else {
+    // Permission not granted, show a snackbar or dialog to inform the user
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Contacts permission required for SOS feature.',
+          style: TextStyle(fontFamily: GoogleFonts.getFont('Kanit').fontFamily),
+        ),
+      ),
+    );
+  }
+}
+
+
+  void _sendSOS(BuildContext context) async {
+    final String message = 'SOS! I need help with the climate crisis!';
+    final String uri = 'sms:?body=${Uri.encodeQueryComponent(message)}';
+
+    if (await canLaunch(uri)) {
+      await launch(uri);
+    } else {
+      print('Could not launch $uri');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: Could not launch messaging app')),
+      );
+    }
+  }
+}
+class _HomeState extends State<Home> {
+  double currentLat = 20.5937;
+  double currentLng = 78.9629;
+  bool locationLoaded = false;
+  bool isHelping = false;
+  bool isOffline = false;
+
+  List<Map<String, dynamic>> _needItems = [];
+  List<Map<String, dynamic>> _giveItems = [];
+
+  Future<void> _checkConnectivity() async {
+    final isConnected = await InternetConnectionChecker().hasConnection;
+    setState(() {
+      isOffline = !isConnected;
+    });
+  }
+
+  List<Map<String, dynamic>> filtersNeedHelp = [
+    {"type": "Hospital", "icon": FontAwesomeIcons.truckMedical},
+    {"type": "Relief Camp", "icon": FontAwesomeIcons.tent},
+    {"type": "Safe Space", "icon": FontAwesomeIcons.home},
+    {"type": "Supplies", "icon": FontAwesomeIcons.boxOpen},
+    {"type": "Volunteer", "icon": FontAwesomeIcons.handsHelping},
+  ];
+
+  List<Map<String, dynamic>> filtersGiveHelp = [
+    {"type": "Victim", "icon": FontAwesomeIcons.handHoldingMedical},
+    {"type": "Volunteer", "icon": FontAwesomeIcons.handsHelping},
+    {"type": "Donate", "icon": FontAwesomeIcons.gift},
+    {"type": "Shelter", "icon": FontAwesomeIcons.home},
+    {"type": "Food", "icon": FontAwesomeIcons.utensils},
+  ];
+
+  String selectedFilter = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _getCurrentLocation();
+    _loadModePreference();
+    _loadJsonData();
+    Timer.periodic(Duration(seconds: 5), (timer) {
+      _checkConnectivity();
+    });
+  }
+
+  void _getCurrentLocation() async {
+    try {
+      var position = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high);
+      setState(() {
+        currentLat = position.latitude;
+        currentLng = position.longitude;
+        locationLoaded = true;
+      });
+      // Update Windy map in the HTML background via JS
+      js.context.callMethod('updateWindyLocation', [currentLat, currentLng]);
+    } catch (e) {
+      debugPrint('Location error: $e');
+      setState(() { locationLoaded = true; });
+    }
+  }
+
+  Future<void> _loadJsonData() async {
+    final url = Uri.parse(_safeBackendUrl() + "/api/v1");
+    // final url = Uri.parse('https://flask-7i2vfdwx7q-el.a.run.app/api/v1');
+    try {
+      final response = await http.get(url);
+      if (response.statusCode == 200) {
+        // final jsonResponse = json.decode(response.body);
+        final jsonResponse = json
+            .decode(response.body.replaceAll('\n', '').replaceAll('  ', ''));
+        print(jsonResponse);
+        _processJsonData(jsonResponse);
+      } else {
+        print(
+            'Failed to load data from the internet. Status code: ${response.statusCode}');
+      }
+    } catch (e) {
+      print("Error fetching data: $e");
+    }
+  }
+
+  void _processJsonData(Map<String, dynamic> data) {
+    setState(() {
+      _needItems = List<Map<String, dynamic>>.from(data['need'] ?? []);
+      _giveItems = List<Map<String, dynamic>>.from(data['give'] ?? []);
+    });
+  }
+
+  void _showLocationDetails(
+      BuildContext context, Map<String, dynamic> locationDetails) async {
+    final double startLatitude = currentLat;
+    final double startLongitude = currentLng;
+    final double endLatitude = locationDetails['location']['lat'];
+    final double endLongitude = locationDetails['location']['lng'];
+
+    double distanceInMeters = Geolocator.distanceBetween(
+        startLatitude, startLongitude, endLatitude, endLongitude);
+    String distanceDisplay = distanceInMeters < 1000
+        ? '${distanceInMeters.toStringAsFixed(0)}m'
+        : '${(distanceInMeters / 1000).toStringAsFixed(1)}km';
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (BuildContext bc) {
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(15),
+              topRight: Radius.circular(15),
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(40, 40, 40, 40),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  locationDetails['type'].toString().toUpperCase(),
+                  style: GoogleFonts.getFont(
+                    "Lexend",
+                    fontWeight: FontWeight.bold,
+                    fontSize: 22,
+                    color: Colors.black,
+                  ),
+                ),
+                SizedBox(height: 10),
+                Divider(thickness: 2),
+                SizedBox(height: 20),
+                Row(
+                  children: [
+                    Icon(Icons.place, color: Colors.black),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Distance: $distanceDisplay',
+                        style: GoogleFonts.getFont(
+                          "Lexend",
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: Colors.black,
+                        ),
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: () {
+                        _openMapRoute(startLatitude, startLongitude,
+                            endLatitude, endLongitude);
+                      },
+                      icon: Icon(Icons.directions, color: Colors.blue),
+                      label: Text(
+                        'Route',
+                        style:
+                            GoogleFonts.getFont("Lexend", color: Colors.blue),
+                      ),
+                    ),
+                  ],
+                ),
+                Row(
+                  children: [
+                    Icon(Icons.telegram, color: Colors.black),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Ph: ${locationDetails['phone']}',
+                        style: GoogleFonts.getFont(
+                          "Lexend",
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: Colors.black,
+                        ),
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: () =>
+                          launch('tel:${locationDetails['phone']}'),
+                      icon: Icon(Icons.call, color: Colors.blue),
+                      label: Text(
+                        ' Call ',
+                        style:
+                            GoogleFonts.getFont("Lexend", color: Colors.blue),
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 22),
+                Text(
+                  locationDetails['type'] == 'victim' ? 'Needs:' : 'Available Assistance:',
+                  //'Available Assistance:',
+                  style: GoogleFonts.getFont(
+                    "Lexend",
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: Colors.black,
+                  ),
+                ),
+                ...locationDetails['help'].map<Widget>((helpItem) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      '• $helpItem',
+                      style: GoogleFonts.getFont(
+                        "Lexend",
+                        fontSize: 16,
+                        color: Colors.black,
+                      ),
+                    ),
+                  );
+                }).toList(),
+                SizedBox(height: 40),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _openMapRoute(
+      double startLat, double startLng, double endLat, double endLng) async {
+    String googleMapsUrl =
+        "https://www.google.com/maps/dir/?api=1&origin=$startLat,$startLng&destination=$endLat,$endLng&travelmode=driving";
+    if (await canLaunch(googleMapsUrl)) {
+      await launch(googleMapsUrl);
+    } else {
+      throw 'Could not open the map.';
+    }
+  }
+
+  Future<void> _handleOfflineMode() async {
+    if (isOffline) {
+      while (isOffline) {
+        await Future.delayed(Duration(hours: 2));
+        final smsNumber = FlutterConfig.get('SMS_NUMBER');
+        final lat = currentLat;
+        final lng = currentLng;
+        final message = 'offline $lat $lng';
+        launch('sms:$smsNumber?body=$message');
+        final response = await _waitForResponse(smsNumber);
+        final jsonData = _combineJsonData(response);
+        _processJsonData(jsonData);
+      }
+    }
+  }
+
+  void _loadModePreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      isHelping = prefs.getBool('mode') ?? false;
+    });
+  }
+
+  Future<List<String>> _waitForResponse(String smsNumber) async {
+    final List<String> messages = [];
+    final Telephony telephony = Telephony.instance;
+    List<SmsMessage> smsStream = await telephony.getInboxSms(
+		columns: [SmsColumn.ADDRESS, SmsColumn.BODY],
+		filter: SmsFilter.where(SmsColumn.ADDRESS)
+				 .equals("$smsNumber")
+				 .and(SmsColumn.BODY)
+				 .like(""),
+		sortOrder: [OrderBy(SmsColumn.ADDRESS, sort: Sort.ASC),
+			    OrderBy(SmsColumn.BODY)]
+		);
+    
+
+    await Future.delayed(Duration(minutes: 1));
+    smsStream.isEmpty ? print('No messages') : print('Messages found');
+    return messages;
+  }
+
+  List<Map<String, dynamic>> _getFilteredItems() {
+    List<Map<String, dynamic>> items = isHelping ? _giveItems : _needItems;
+    if (selectedFilter.isEmpty) return items;
+    return items.where((item) {
+      String type = (item['type'] ?? '').toString().toLowerCase();
+      return type == selectedFilter.toLowerCase();
+    }).toList();
+  }
+
+  Map<String, dynamic> _combineJsonData(List<String> messages) {
+    final Map<String, dynamic> combinedJson = {};
+    final RegExp numberRegex = RegExp(r'^(\d+)-end$');
+    final Map<int, String> orderedMessages = {};
+
+    for (final message in messages) {
+      final match = numberRegex.firstMatch(message);
+      if (match != null) {
+        final int number = int.parse(match.group(1)!);
+        orderedMessages[number] = message;
+      }
+    }
+
+    final List<String> orderedData = orderedMessages.values.toList();
+    for (final data in orderedData) {
+      final jsonData = jsonDecode(data);
+      combinedJson.addAll(jsonData);
+    }
+
+    return combinedJson;
+  }
+
+  // Set<Circle> _buildCircles() {
+  //   return {
+  //     Circle(
+  //       circleId: CircleId('current_location'),
+  //       center: currentLocation,
+  //       radius: 200,
+  //       fillColor: Colors.green.withOpacity(0.5),
+  //       strokeColor: Colors.green[800]!,
+  //       strokeWidth: 3,
+  //     ),
+  //   };
+  // }
+
+  // Set<Marker> _buildMarkers() {
+  //   return {
+  //     if (currentCameraPosition.zoom < 10)
+  //       Marker(
+  //         markerId: MarkerId('current_location_marker'),
+  //         position: currentLocation,
+  //       ),
+  //   };
+  // }
+
+  //<--------------------- Misc --------------------->
+  // void _toggleMode(bool value) async {
+  //   final prefs = await SharedPreferences.getInstance();
+  //   setState(() {
+  //     isHelping = value;
+  //     print(isHelping);
+  //     prefs.setBool('mode', isHelping);
+  //   });
+  // }
+
+  // <--------------------- Actions --------------------->
+
+  // dynamic actionButtonClickFn() {
+  //   // Placeholder function to print the details
+  //   print("-------------------------------------------------------------------------------------------------");
+  //   print('Current Location: $currentLocation');
+  //   print('Selected Filter: $selectedFilter');
+  //   print('Selected Mode: ${isHelping ? "Helping" : "Need Help"}');
+
+  // }
+
+  // -----------------------------------------------------------------------------------------------------------------------------------------------
+
+  void makePostRequest(List<String> selectedHelp, bool isHelping, dynamic lat, dynamic lng) async {
+    final prefs = await SharedPreferences.getInstance();
+    String phoneNumber = prefs.getString('phoneNumber') ?? 'No phone number set';
+
+    String mode = isHelping ? "give" : "need";
+    String type = isHelping ? "volunteer" : "victim";
+    double latitude = lat;
+    double longitude = lng;
+
+    Map<String, dynamic> requestBody = {
+      "mode": mode,
+      "type": type,
+      "location": {"lat": latitude, "lng": longitude},
+      "phone": phoneNumber,
+      "help": selectedHelp,
+    };
+
+    final response = await http.post(
+      Uri.parse(_safeBackendUrl() + "/api/v1"),
+      headers: <String, String>{
+        'Content-Type': 'application/json;',
+      },
+      body: jsonEncode(requestBody),
+    );
+
+    if (response.statusCode == 200) {
+      // Request successful
+      print('POST request successful');
+      print('Response: ${response.body}');
+    } else {
+      // Request failed
+      print('POST request failed with status: ${response.statusCode}');
+      print('Response: ${response.body}');
+    }
+  }
+
+  void reloadMapMarkers() async {
+    await _loadJsonData();
+  }
+
+
+  void actionButtonClickFn() async {
+    final prefs = await SharedPreferences.getInstance();
+    String phoneNumber =
+        prefs.getString('phoneNumber') ?? 'No phone number set';
+
+    Map<String, IconData> helpIcons = {
+      'Volunteer': Icons.volunteer_activism,
+      'Donate': Icons.monetization_on,
+      'Provide Shelter': Icons.house,
+      'Offer Food': Icons.food_bank,
+      'Medical': Icons.medical_services,
+      'Shelter': Icons.house,
+      'Food': Icons.fastfood,
+      'Clothing': Icons.checkroom,
+      'Other': Icons.help_outline,
+    };
+
+    Map<String, bool> helpOptions = Map.fromIterable(
+      isHelping ? helpIcons.keys.take(4) : helpIcons.keys.skip(4),
+      key: (item) => item as String,
+      value: (item) => false,
+    );
+
+    bool isAnyOptionSelected() {
+      return helpOptions.containsValue(true);
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(25.0)),
+      ),
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setModalState) {
+            return Padding(
+              padding: EdgeInsets.all(40),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  SizedBox(height: 10),
+                  Text(
+                    isHelping ? ' I can provide' : ' I need',
+                    style: GoogleFonts.getFont(
+                      "Lexend",
+                      fontWeight: FontWeight.bold,
+                      fontSize: 20,
+                    ),
+                  ),
+                  Divider(),
+                  ...helpOptions.keys.map((option) {
+                    final isSelected = helpOptions[option]!;
+                    return Container(
+                      margin: EdgeInsets.only(top: 10),
+                      child: InkWell(
+                        onTap: () {
+                          setModalState(() {
+                            helpOptions[option] = !isSelected;
+                          });
+                        },
+                        child: Container(
+                          padding: EdgeInsets.symmetric(vertical: 15),
+                          decoration: BoxDecoration(
+                            border: isSelected
+                                ? Border.all(
+                                    color: Theme.of(context).primaryColor,
+                                    width: 2)
+                                : Border.all(color: Colors.grey[300]!),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Row(
+                            children: [
+                              SizedBox(width: 15), // Padding on the left side
+                              Icon(helpIcons[option],
+                                  color: isSelected
+                                      ? Theme.of(context).primaryColor
+                                      : Colors.grey),
+                              SizedBox(
+                                  width: 15), // Space between the icon and text
+                              Expanded(
+                                child: Text(
+                                  option,
+                                  style: GoogleFonts.getFont(
+                                    "Lexend",
+                                    fontWeight: FontWeight.bold,
+                                    color: isSelected
+                                        ? Theme.of(context).primaryColor
+                                        : Colors.black,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ),
+                              if (isSelected)
+                                Icon(Icons.check,
+                                    color: Theme.of(context).primaryColor),
+                              SizedBox(width: 15), // Padding on the right side
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                  SizedBox(height: 20),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      shape: StadiumBorder(),
+                      backgroundColor: isHelping ? Colors.blue : Colors.red,
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                    ),
+                    child: Text(
+                      'Submit',
+                      style: GoogleFonts.getFont(
+                        "Lexend",
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                        color: Colors.white,
+                      ),
+                    ),
+                    onPressed: isAnyOptionSelected()
+                        ? () async {
+                            List<String> selectedHelp = helpOptions.entries
+                                .where((entry) => entry.value)
+                                .map((entry) => entry.key)
+                                .toList();
+                            // Handle the submission logic here
+                            print('Phone Number: $phoneNumber');
+                            print('Selected Help Options: $selectedHelp');
+                            makePostRequest(selectedHelp, isHelping, currentLat, currentLng);
+                            Navigator.pop(
+                                context); // Close the modal bottom sheet
+                            reloadMapMarkers();
+                          }
+                        : null,
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // <--------------------- UI --------------------->
+
+  Widget _buildTopFloatingBar() {
+    return Container(
+      height: 60,
+      padding: EdgeInsets.symmetric(horizontal: 20),
+      margin: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 10),
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        decoration: BoxDecoration(
+          color: Color.fromARGB(255, 227, 227, 227),
+          borderRadius: BorderRadius.circular(30),
+          boxShadow: [
+            BoxShadow(color: Colors.black26, blurRadius: 8, spreadRadius: 2)
+          ],
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: CupertinoSlidingSegmentedControl<int>(
+                children: {
+                  0: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8),
+                    child: Text(
+                      'Need Help',
+                      style: GoogleFonts.getFont('Lexend',
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                          color: isHelping ? Colors.grey : Colors.redAccent),
+                    ),
+                  ),
+                  1: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 10),
+                    child: Text(
+                      'Give Help',
+                      style: GoogleFonts.getFont('Lexend',
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                          color: isHelping ? Colors.blue : Colors.grey),
+                    ),
+                  ),
+                },
+                groupValue: isHelping ? 1 : 0,
+                onValueChanged: (int? value) {
+                  setState(() {
+                    isHelping = value == 1;
+                  });
+                },
+                backgroundColor: Color.fromARGB(255, 227, 227, 227),
+                thumbColor: Colors.white,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOfflineWidget() {
+    return Container(
+      margin: EdgeInsets.all(20.0),
+      padding: EdgeInsets.all(16.0),
+      decoration: BoxDecoration(
+        color: Colors.redAccent,
+        borderRadius: BorderRadius.circular(10.0),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.error_outline, color: Colors.white),
+          SizedBox(width: 10.0),
+          Expanded(
+            child: Text(
+              'No network connection, switching to SMS mode',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 13.0,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilterBar() {
+    List<Map<String, dynamic>> currentFilters =
+        isHelping ? filtersGiveHelp : filtersNeedHelp;
+    return Container(
+      height: 60,
+      padding: EdgeInsets.symmetric(horizontal: 10),
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: currentFilters.length,
+        itemBuilder: (BuildContext context, int index) {
+          Map<String, dynamic> filter = currentFilters[index];
+          bool isSelected = filter['type'] == selectedFilter;
+
+          return Container(
+            margin: EdgeInsets.symmetric(horizontal: 3),
+            child: FilterChip(
+              avatar: Icon(filter['icon'],
+                  color: isSelected ? Colors.white : Colors.grey),
+              label: Text(filter['type'],
+                  style: GoogleFonts.getFont('Lexend',
+                      fontWeight: FontWeight.w500,
+                      fontSize: 16,
+                      color: isSelected ? Colors.white : Colors.grey)),
+              selected: isSelected,
+              onSelected: (bool value) {
+                setState(() {
+                  selectedFilter = value ? filter['type'] : '';
+                });
+              },
+              backgroundColor: Color.fromARGB(255, 227, 227, 227),
+              selectedColor: isHelping
+                  ? Color.fromARGB(255, 137, 202, 255)
+                  : Color.fromARGB(255, 250, 121, 121),
+              checkmarkColor: Colors.transparent,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(30),
+                side: BorderSide(
+                  color: isSelected ? Colors.transparent : Colors.transparent,
+                ),
+              ),
+              shadowColor: Colors.black,
+              elevation: 3,
+              showCheckmark: false,
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget recenterBtn() {
+    return Positioned(
+      right: 20.0,
+      bottom: 90.0,
+      child: FloatingActionButton(
+        mini: false,
+        child: Icon(FontAwesomeIcons.streetView, color: Colors.black),
+        backgroundColor: Colors.white,
+        onPressed: () {
+          js.context.callMethod('updateWindyLocation', [currentLat, currentLng]);
+        },
+      ),
+    );
+  }
+
+  Widget actionBtn(isHelping, selectedFilter) {
+    return Positioned(
+      right: 20.0,
+      bottom: 20.0,
+      child: buildFloatingActionButton(
+        isHelping: isHelping,
+        selectedFilter: selectedFilter,
+      ),
+    );
+  }
+
+  Widget buildFloatingActionButton({
+    required bool isHelping,
+    required String selectedFilter,
+  }) {
+    return FloatingActionButton(
+      child: Icon(
+        isHelping
+            ? FontAwesomeIcons.handHoldingHeart
+            : FontAwesomeIcons.handsHelping,
+        color: Colors.white,
+      ),
+      backgroundColor: isHelping
+          ? Color.fromARGB(255, 137, 202, 255)
+          : Color.fromARGB(255, 250, 121, 121),
+      onPressed: actionButtonClickFn,
+    );
+  }
+
+  Widget _buildItemsPanel() {
+    final items = _getFilteredItems();
+    if (items.isEmpty) return SizedBox.shrink();
+    return Positioned(
+      bottom: 90,
+      left: 0,
+      right: 0,
+      child: SizedBox(
+        height: 100,
+        child: ListView.builder(
+          scrollDirection: Axis.horizontal,
+          padding: EdgeInsets.symmetric(horizontal: 10),
+          itemCount: items.length,
+          itemBuilder: (context, index) {
+            final item = items[index];
+            final double itemLat = (item['location']['lat'] as num).toDouble();
+            final double itemLng = (item['location']['lng'] as num).toDouble();
+            final dist = Geolocator.distanceBetween(currentLat, currentLng, itemLat, itemLng);
+            final distStr = dist < 1000
+                ? '${dist.toStringAsFixed(0)}m'
+                : '${(dist / 1000).toStringAsFixed(1)}km';
+            return GestureDetector(
+              onTap: () => _showLocationDetails(context, item),
+              child: Container(
+                width: 140,
+                margin: EdgeInsets.symmetric(horizontal: 5),
+                padding: EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.93),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 4)],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      (item['type'] ?? '').toString().toUpperCase(),
+                      style: GoogleFonts.getFont('Lexend',
+                          fontWeight: FontWeight.bold, fontSize: 12),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    SizedBox(height: 4),
+                    Row(children: [
+                      Icon(Icons.place, size: 12, color: Colors.grey),
+                      SizedBox(width: 2),
+                      Text(distStr,
+                          style: GoogleFonts.getFont('Lexend',
+                              fontSize: 11, color: Colors.grey)),
+                    ]),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  // <--------------------- Build --------------------->
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Stack(
+        children: [
+          // Map is in HTML background (index.html) — Flutter is fully transparent here
+          const SizedBox.expand(),
+          Column(
+            children: [
+              _buildTopFloatingBar(),
+              _buildFilterBar(),
+              isOffline ? _buildOfflineWidget() : Container(),
+            ],
+          ),
+          if (locationLoaded) _buildItemsPanel(),
+          recenterBtn(),
+          actionBtn(isHelping, selectedFilter),
+          SOSButton(isHelping: isHelping == true),
+        ],
+      ),
+    );
+  }
+}

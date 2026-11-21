@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base href="$FLUTTER_BASE_HREF">
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="A new Flutter project.">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="mobile">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+  <link rel="icon" type="image/png" href="favicon.png"/>
+  <title>Sahaya</title>
+  <link rel="manifest" href="manifest.json">
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%; height: 100%;
+      overflow: hidden;
+      background: transparent !important;
+      background-color: transparent !important;
+    }
+    #windy-bg {
+      position: fixed; top: 0; left: 0;
+      width: 100%; height: 100%;
+      z-index: 0;
+    }
+    #windy-bg iframe {
+      width: 100%; height: 100%; border: none;
+    }
+    /* Flutter canvas sits on top, fully transparent background */
+    flt-glass-pane, flt-scene-host, flt-scene,
+    flt-glass-pane canvas, flt-scene canvas, flt-scene-host canvas {
+      background: transparent !important;
+      background-color: transparent !important;
+    }
+    canvas {
+      background: transparent !important;
+      background-color: transparent !important;
+    }
+  </style>
+
+  <script>
+    // Allow Flutter to update Windy location via JS interop
+    function updateWindyLocation(lat, lng) {
+      var url = 'https://embed.windy.com/embed2.html?lat=' + lat +
+        '&lon=' + lng + '&detailLat=' + lat + '&detailLon=' + lng +
+        '&zoom=10&level=surface&overlay=radar&product=radar' +
+        '&menu=&message=true&marker=true&calendar=now&pressure=true' +
+        '&type=map&location=coordinates&detail=&metricWind=default' +
+        '&metricTemp=default&radarRange=-1&key=OjwfppPns1vyuKYfXsKSdjiURjbPzdeT';
+      var frame = document.getElementById('windy-frame');
+      if (frame) {
+        frame.src = url;
+      }
+    }
+
+    // Continuously ensure Flutter's Shadow DOM stays 100% transparent
+    function ensureFlutterTransparent() {
+      var pane = document.querySelector('flt-glass-pane');
+      if (pane) {
+        pane.style.setProperty('background', 'transparent', 'important');
+        pane.style.setProperty('background-color', 'transparent', 'important');
+        if (pane.shadowRoot) {
+          if (!pane.shadowRoot.getElementById('flutter-transparent-style')) {
+            var style = document.createElement('style');
+            style.id = 'flutter-transparent-style';
+            style.textContent = `
+              :host, flt-scene-host, flt-scene, flt-canvas, canvas {
+                background: transparent !important;
+                background-color: transparent !important;
+              }
+            `;
+            pane.shadowRoot.appendChild(style);
+          }
+          var canvases = pane.shadowRoot.querySelectorAll('canvas');
+          canvases.forEach(function(c) {
+            c.style.setProperty('background', 'transparent', 'important');
+            c.style.setProperty('background-color', 'transparent', 'important');
+          });
+        }
+      }
+    }
+    setInterval(ensureFlutterTransparent, 200);
+
+    const serviceWorkerVersion = null;
+  </script>
+  <script src="flutter.js" defer></script>
+</head>
+<body>
+  <!-- Windy map as full-screen background -->
+  <div id="windy-bg">
+    <iframe id="windy-frame"
+      src="https://embed.windy.com/embed2.html?lat=20.59&lon=78.96&detailLat=20.59&detailLon=78.96&zoom=6&level=surface&overlay=radar&product=radar&menu=&message=true&marker=true&calendar=now&pressure=true&type=map&location=coordinates&detail=&metricWind=default&metricTemp=default&radarRange=-1&key=OjwfppPns1vyuKYfXsKSdjiURjbPzdeT">
+    </iframe>
+  </div>
+  <script>
+    window.addEventListener('load', function(ev) {
+      _flutter.loader.loadEntrypoint({
+        serviceWorker: {
+          serviceWorkerVersion: serviceWorkerVersion,
+        },
+        onEntrypointLoaded: function(engineInitializer) {
+          engineInitializer.initializeEngine().then(function(appRunner) {
+            appRunner.runApp();
+          });
+        }
+      });
+    });
+  </script>
+</body>
+</html>
