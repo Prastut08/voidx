@@ -47,14 +47,8 @@ class _SOSChatPanelState extends State<SOSChatPanel> {
 
   final List<Map<String, dynamic>> _messages = [];
 
-  final List<String> _quickActions = [
-    'I am trapped.',
-    'I need medical assistance.',
-    'I need evacuation.',
-    'I need food and water.',
-    'I need shelter.',
-    'I need general rescue assistance.'
-  ];
+  List<String> _quickActions = [];
+  bool _quickActionsLoaded = false;
 
   @override
   void initState() {
@@ -78,6 +72,7 @@ class _SOSChatPanelState extends State<SOSChatPanel> {
     });
 
     _initWelcome();
+    _loadQuickActions();
     _fetchLiveRescueTeams('general');
   }
 
@@ -96,6 +91,75 @@ class _SOSChatPanelState extends State<SOSChatPanel> {
           'Emergency assistance activated. Tell me what happened. I\'ll help identify available nearby assistance and send your emergency request.',
       'time': _formatTime(),
     });
+  }
+
+  Future<void> _loadQuickActions() async {
+    // Use common emergency queries to get dynamic quick actions from the backend's knowledge base
+    final commonQueries = [
+      'trapped under debris',
+      'medical emergency bleeding',
+      'need evacuation boat',
+      'need food and water',
+      'need shelter',
+      'general rescue help',
+    ];
+
+    try {
+      final List<String> actions = [];
+      for (final query in commonQueries) {
+        try {
+          final res = await http
+              .get(
+                Uri.parse(
+                    '${widget.backendUrl}/api/chat/emergency?query=${Uri.encodeComponent(query)}'),
+              )
+              .timeout(const Duration(seconds: 2));
+
+          if (res.statusCode == 200) {
+            final data = json.decode(res.body);
+            final guidance = data['guidance'];
+            final category = guidance['category'] ?? 'general';
+            // Create a user-friendly action based on category
+            String actionText;
+            switch (category) {
+              case 'rescue':
+              case 'trapped':
+                actionText = 'I am trapped';
+                break;
+              case 'medical':
+                actionText = 'I need medical assistance';
+                break;
+              case 'evacuation':
+                actionText = 'I need evacuation';
+                break;
+              case 'food':
+              case 'food_water':
+                actionText = 'I need food and water';
+                break;
+              case 'shelter':
+                actionText = 'I need shelter';
+                break;
+              default:
+                actionText = 'I need general rescue assistance';
+            }
+            if (!actions.contains(actionText)) {
+              actions.add(actionText);
+            }
+          }
+        } catch (_) {
+          // Continue with other queries
+        }
+      }
+
+      if (mounted && actions.isNotEmpty) {
+        setState(() {
+          _quickActions = actions;
+          _quickActionsLoaded = true;
+        });
+      }
+    } catch (_) {
+      // Silently fail, quick actions will remain empty
+    }
   }
 
   String _formatTime() {
@@ -245,7 +309,7 @@ class _SOSChatPanelState extends State<SOSChatPanel> {
       }
     } catch (_) {
       _addBotMessage(
-          'Offline Mode: Immediate Advice: Stay in a reinforced room away from water and windows. Review your GPS position and click "Send SOS" to store and broadcast via offline mesh.');
+          'Offline Mode: Unable to fetch emergency guidance. Stay in a safe interior room away from windows. Review your GPS position and press "Send SOS" to store and broadcast via offline mesh.');
     }
   }
 
