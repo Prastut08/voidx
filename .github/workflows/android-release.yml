@@ -48,18 +48,9 @@ jobs:
           flutter pub get
 
       - name: Build Android Release APK
-        id: build_apk
         working-directory: apps/mobile
-        continue-on-error: true
         run: |
           flutter build apk --release --no-tree-shake-icons --dart-define=ENVIRONMENT=prod
-
-      - name: Output Build Logs on Failure
-        if: steps.build_apk.outcome == 'failure'
-        run: |
-          echo "=== GRADLE FAILURE DIAGNOSTICS ==="
-          find apps/mobile/build -name "*.log" -exec cat {} + 2>/dev/null || true
-          exit 1
 
       - name: Build Android App Bundle (AAB)
         working-directory: apps/mobile
@@ -105,5 +96,12 @@ jobs:
             ### 📱 Download & Install
             - **Direct APK Download**: [`app-release.apk`](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/app-release.apk)
             - **Google Play App Bundle**: [`app-release.aab`](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/app-release.aab)
+            
+            #### Android Installation Instructions:
+            1. Download `app-release.apk` to your Android device.
+            2. Open the downloaded file.
+            3. If prompted, enable **"Install unknown apps"** in your Android device settings.
+            4. Follow the system installer prompt to complete installation.
+            5. Grant **Location** and **SMS / Notification** permissions when prompted to enable real-time emergency dispatch and offline relaying.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
