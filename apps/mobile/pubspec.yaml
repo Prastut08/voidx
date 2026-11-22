@@ -12,10 +12,8 @@ dependencies:
 
   cupertino_icons: ^1.0.2
   flutter_config:
-  telephony:
-  permission_handler:
-  google_fonts:
-  font_awesome_flutter:
+  permission_handler: ^11.3.1
+  google_fonts: ^6.2.1
   intl_phone_field:
   url_launcher:
   shared_preferences:

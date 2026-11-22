@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+
 import 'emergency_relay_service.dart';
 
 class SOSChatPanel extends StatefulWidget {
@@ -488,7 +488,7 @@ class _SOSChatPanelState extends State<SOSChatPanel> {
                         color: Colors.redAccent.withOpacity(0.12),
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(FontAwesomeIcons.triangleExclamation,
+                      child: const Icon(Icons.warning_amber_rounded,
                           color: Colors.redAccent, size: 20),
                     ),
                     const SizedBox(width: 12),
@@ -757,7 +757,7 @@ class _SOSChatPanelState extends State<SOSChatPanel> {
                             child: CircularProgressIndicator(
                                 strokeWidth: 2, color: Colors.white),
                           )
-                        : const Icon(FontAwesomeIcons.towerBroadcast, size: 18),
+                        : const Icon(Icons.cell_tower, size: 18),
                     label: Text(
                       _isSending
                           ? 'TRANSMITTING SOS...'

@@ -1,16 +1,14 @@
-import 'package:flutter/material.dart';
+ import 'package:flutter/material.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:js' as js;
 import 'package:flutter_config/flutter_config.dart';
-import 'package:telephony/telephony.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/cupertino.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:internet_connection_checker/internet_connection_checker.dart';
 import 'package:http/http.dart' as http;
 import 'sos_chat_panel.dart';
@@ -20,7 +18,8 @@ String _safeBackendUrl() {
     final val = FlutterConfig.get('BACKEND_URL');
     if (val != null && val.toString().isNotEmpty) return val.toString();
   } catch (_) {}
-  return 'http://172.25.179.250:8080';
+  final host = Uri.base.host.isNotEmpty ? Uri.base.host : 'localhost';
+  return 'http://$host:8080';
 }
 
 class Home extends StatefulWidget {
@@ -119,19 +118,25 @@ class _HomeState extends State<Home> {
   }
 
   List<Map<String, dynamic>> filtersNeedHelp = [
-    {"type": "Hospital", "icon": FontAwesomeIcons.truckMedical},
-    {"type": "Relief Camp", "icon": FontAwesomeIcons.tent},
-    {"type": "Safe Space", "icon": FontAwesomeIcons.home},
-    {"type": "Supplies", "icon": FontAwesomeIcons.boxOpen},
-    {"type": "Volunteer", "icon": FontAwesomeIcons.handsHelping},
+    {"type": "Pharmacy", "icon": Icons.local_pharmacy},
+    {"type": "Grocery & Food", "icon": Icons.shopping_basket},
+    {"type": "Supplies", "icon": Icons.inventory_2},
+    {"type": "Hospital", "icon": Icons.local_hospital},
+    {"type": "Relief Camp", "icon": Icons.holiday_village},
+    {"type": "Shelter", "icon": Icons.home},
+    {"type": "Volunteer", "icon": Icons.volunteer_activism},
   ];
 
+  String _activeGroqHeading = '';
+  bool _isLoadingGroqShops = false;
+  List<Map<String, dynamic>> _groqShops = [];
+
   List<Map<String, dynamic>> filtersGiveHelp = [
-    {"type": "Victim", "icon": FontAwesomeIcons.handHoldingMedical},
-    {"type": "Volunteer", "icon": FontAwesomeIcons.handsHelping},
-    {"type": "Donate", "icon": FontAwesomeIcons.gift},
-    {"type": "Shelter", "icon": FontAwesomeIcons.home},
-    {"type": "Food", "icon": FontAwesomeIcons.utensils},
+    {"type": "Victim", "icon": Icons.medical_services},
+    {"type": "Volunteer", "icon": Icons.volunteer_activism},
+    {"type": "Donate", "icon": Icons.card_giftcard},
+    {"type": "Shelter", "icon": Icons.home},
+    {"type": "Food", "icon": Icons.restaurant},
   ];
 
   String selectedFilter = '';
@@ -172,6 +177,10 @@ class _HomeState extends State<Home> {
 
   void _getCurrentLocation() async {
     try {
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
       var position = await Geolocator.getCurrentPosition(
           desiredAccuracy: LocationAccuracy.high);
       setState(() {
@@ -179,15 +188,64 @@ class _HomeState extends State<Home> {
         currentLng = position.longitude;
         locationLoaded = true;
       });
-      // Update Windy map in the HTML background via JS
       js.context.callMethod('updateWindyLocation', [currentLat, currentLng]);
       _loadJsonData();
     } catch (e) {
-      debugPrint('Location error: $e');
+      debugPrint('Location error, attempting IP fallback: $e');
+      try {
+        final ipRes = await http.get(Uri.parse('https://ipapi.co/json/')).timeout(const Duration(seconds: 4));
+        if (ipRes.statusCode == 200) {
+          final d = json.decode(ipRes.body);
+          if (d['latitude'] != null && d['longitude'] != null) {
+            setState(() {
+              currentLat = (d['latitude'] as num).toDouble();
+              currentLng = (d['longitude'] as num).toDouble();
+              locationLoaded = true;
+            });
+            js.context.callMethod('updateWindyLocation', [currentLat, currentLng]);
+          }
+        }
+      } catch (_) {}
+      setState(() { locationLoaded = true; });
+    }
+  }
+
+  Future<void> _fetchGroqShops(String heading, [StateSetter? setModalState]) async {
+    setState(() {
+      _activeGroqHeading = heading;
+      _isLoadingGroqShops = true;
+    });
+    if (setModalState != null) setModalState(() {});
+
+    try {
+      final uri = Uri.parse('${_safeBackendUrl()}/api/v1/nearby-shops').replace(
+        queryParameters: {
+          'lat': currentLat.toString(),
+          'lng': currentLng.toString(),
+          'category': heading,
+        },
+      );
+      final response = await http.get(uri).timeout(const Duration(seconds: 18));
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final list = List<Map<String, dynamic>>.from(data['shops'] ?? []);
+        setState(() {
+          _groqShops = list;
+          _isLoadingGroqShops = false;
+        });
+      } else {
+        setState(() {
+          _isLoadingGroqShops = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error fetching Groq shops: $e');
       setState(() {
-        locationLoaded = true;
+        _isLoadingGroqShops = false;
       });
     }
+
+    if (setModalState != null) setModalState(() {});
   }
 
   Future<void> _loadJsonData() async {
@@ -195,7 +253,6 @@ class _HomeState extends State<Home> {
     try {
       final response = await http.get(url);
       if (response.statusCode == 200) {
-        // final jsonResponse = json.decode(response.body);
         final jsonResponse = json
             .decode(response.body.replaceAll('\n', '').replaceAll('  ', ''));
         print(jsonResponse);
@@ -236,6 +293,12 @@ class _HomeState extends State<Home> {
           ? '${distanceInMeters.toStringAsFixed(0)}m'
           : '${(distanceInMeters / 1000).toStringAsFixed(1)}km';
 
+      final title = locationDetails['name'] ?? (locationDetails['type'] ?? 'ASSISTANCE').toString().toUpperCase();
+      final address = locationDetails['address'] ?? '';
+      final phone = locationDetails['phone'] ?? '';
+      final hours = locationDetails['operating_hours'] ?? '';
+      final List<dynamic> items = locationDetails['items_available'] ?? locationDetails['help'] ?? [];
+
       await showModalBottomSheet(
         context: context,
         isScrollControlled: true,
@@ -244,112 +307,196 @@ class _HomeState extends State<Home> {
           return Container(
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.only(
-                topLeft: Radius.circular(15),
-                topRight: Radius.circular(15),
-              ),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
             ),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(40, 40, 40, 40),
+              padding: const EdgeInsets.fromLTRB(28, 24, 28, 36),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    locationDetails['type'].toString().toUpperCase(),
-                    style: GoogleFonts.getFont(
-                      "Lexend",
-                      fontWeight: FontWeight.bold,
-                      fontSize: 22,
-                      color: Colors.black,
+                  Center(
+                    child: Container(
+                      width: 44,
+                      height: 4,
+                      margin: EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(2),
+                      ),
                     ),
                   ),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              title,
+                              style: GoogleFonts.getFont(
+                                "Lexend",
+                                fontWeight: FontWeight.bold,
+                                fontSize: 20,
+                                color: Colors.black,
+                              ),
+                            ),
+                            if (locationDetails['type'] != null)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4.0),
+                                child: Text(
+                                  locationDetails['type'].toString().toUpperCase(),
+                                  style: GoogleFonts.getFont(
+                                    "Lexend",
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.blueAccent,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.verified, size: 14, color: Colors.green[700]),
+                            SizedBox(width: 4),
+                            Text(
+                              'Verified',
+                              style: TextStyle(color: Colors.green[800], fontSize: 11, fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (address.isNotEmpty) ...[
+                    SizedBox(height: 10),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.location_on, size: 16, color: Colors.grey[700]),
+                        SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            address,
+                            style: GoogleFonts.getFont("Lexend", fontSize: 13, color: Colors.grey[800]),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                  if (hours.isNotEmpty) ...[
+                    SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Icon(Icons.access_time, size: 16, color: Colors.teal),
+                        SizedBox(width: 6),
+                        Text(
+                          hours,
+                          style: GoogleFonts.getFont("Lexend", fontSize: 13, color: Colors.teal[800], fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                  ],
+                  SizedBox(height: 14),
+                  Divider(),
                   SizedBox(height: 10),
-                  Divider(thickness: 2),
-                  SizedBox(height: 20),
                   Row(
                     children: [
-                      Icon(Icons.place, color: Colors.black),
-                      SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Distance: $distanceDisplay',
-                          style: GoogleFonts.getFont(
-                            "Lexend",
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: Colors.black,
-                          ),
-                        ),
+                      Icon(Icons.near_me, color: Colors.blue, size: 18),
+                      SizedBox(width: 6),
+                      Text(
+                        'Distance: $distanceDisplay',
+                        style: GoogleFonts.getFont("Lexend", fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87),
                       ),
+                      Spacer(),
                       TextButton.icon(
+                        style: TextButton.styleFrom(
+                          backgroundColor: Colors.blue.withOpacity(0.1),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                        ),
                         onPressed: () {
-                          _openMapRoute(startLatitude, startLongitude,
-                              endLatitude, endLongitude);
+                          _openMapRoute(startLatitude, startLongitude, endLatitude, endLongitude);
                         },
-                        icon: Icon(Icons.directions, color: Colors.blue),
-                        label: Text(
-                          'Route',
-                          style:
-                              GoogleFonts.getFont("Lexend", color: Colors.blue),
+                        icon: Icon(Icons.directions, color: Colors.blue, size: 16),
+                        label: Text('Route', style: GoogleFonts.getFont("Lexend", color: Colors.blue, fontWeight: FontWeight.bold)),
+                      ),
+                      SizedBox(width: 8),
+                      TextButton.icon(
+                        style: TextButton.styleFrom(
+                          backgroundColor: Colors.teal.withOpacity(0.1),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                         ),
+                        onPressed: () {
+                          Navigator.pop(context);
+                          js.context.callMethod('updateWindyLocation', [endLatitude, endLongitude]);
+                        },
+                        icon: Icon(Icons.map, color: Colors.teal, size: 16),
+                        label: Text('Map', style: GoogleFonts.getFont("Lexend", color: Colors.teal, fontWeight: FontWeight.bold)),
                       ),
                     ],
                   ),
-                  Row(
-                    children: [
-                      Icon(Icons.telegram, color: Colors.black),
-                      SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Ph: ${locationDetails['phone']}',
-                          style: GoogleFonts.getFont(
-                            "Lexend",
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: Colors.black,
+                  if (phone.isNotEmpty) ...[
+                    SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Icon(Icons.phone, color: Colors.black54, size: 16),
+                        SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            phone,
+                            style: GoogleFonts.getFont("Lexend", fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87),
                           ),
                         ),
-                      ),
-                      TextButton.icon(
-                        onPressed: () =>
-                            launch('tel:${locationDetails['phone']}'),
-                        icon: Icon(Icons.call, color: Colors.blue),
-                        label: Text(
-                          ' Call ',
-                          style:
-                              GoogleFonts.getFont("Lexend", color: Colors.blue),
+                        TextButton.icon(
+                          style: TextButton.styleFrom(
+                            backgroundColor: Colors.green.withOpacity(0.1),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                          ),
+                          onPressed: () => launch('tel:$phone'),
+                          icon: Icon(Icons.call, color: Colors.green[700], size: 16),
+                          label: Text('Call', style: GoogleFonts.getFont("Lexend", color: Colors.green[700], fontWeight: FontWeight.bold)),
                         ),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 22),
-                  Text(
-                    locationDetails['type'] == 'victim'
-                        ? 'Needs:'
-                        : 'Available Assistance:',
-                    //'Available Assistance:',
-                    style: GoogleFonts.getFont(
-                      "Lexend",
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                      color: Colors.black,
+                      ],
                     ),
-                  ),
-                  ...locationDetails['help'].map<Widget>((helpItem) {
-                    return Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(
-                        '• $helpItem',
-                        style: GoogleFonts.getFont(
-                          "Lexend",
-                          fontSize: 16,
-                          color: Colors.black,
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                  SizedBox(height: 40),
+                  ],
+                  if (items.isNotEmpty) ...[
+                    SizedBox(height: 18),
+                    Text(
+                      'Available Supplies & Assistance:',
+                      style: GoogleFonts.getFont("Lexend", fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87),
+                    ),
+                    SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: items.map<Widget>((it) {
+                        return Container(
+                          padding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Color(0xFFE2E8F0)),
+                          ),
+                          child: Text(
+                            it.toString(),
+                            style: GoogleFonts.getFont("Lexend", fontSize: 12, color: Colors.black87),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                  SizedBox(height: 20),
                 ],
               ),
             ),
@@ -398,21 +545,9 @@ class _HomeState extends State<Home> {
   }
 
   Future<List<String>> _waitForResponse(String smsNumber) async {
+    // SMS/telephony not supported on web - return empty list
     final List<String> messages = [];
-    final Telephony telephony = Telephony.instance;
-    List<SmsMessage> smsStream = await telephony.getInboxSms(
-        columns: [SmsColumn.ADDRESS, SmsColumn.BODY],
-        filter: SmsFilter.where(SmsColumn.ADDRESS)
-            .equals("$smsNumber")
-            .and(SmsColumn.BODY)
-            .like(""),
-        sortOrder: [
-          OrderBy(SmsColumn.ADDRESS, sort: Sort.ASC),
-          OrderBy(SmsColumn.BODY)
-        ]);
-
-    await Future.delayed(Duration(minutes: 1));
-    smsStream.isEmpty ? print('No messages') : print('Messages found');
+    await Future.delayed(const Duration(seconds: 1));
     return messages;
   }
 
@@ -447,51 +582,748 @@ class _HomeState extends State<Home> {
     return combinedJson;
   }
 
-  // Set<Circle> _buildCircles() {
-  //   return {
-  //     Circle(
-  //       circleId: CircleId('current_location'),
-  //       center: currentLocation,
-  //       radius: 200,
-  //       fillColor: Colors.green.withOpacity(0.5),
-  //       strokeColor: Colors.green[800]!,
-  //       strokeWidth: 3,
-  //     ),
-  //   };
-  // }
+  // <--------------------- UI --------------------->
 
-  // Set<Marker> _buildMarkers() {
-  //   return {
-  //     if (currentCameraPosition.zoom < 10)
-  //       Marker(
-  //         markerId: MarkerId('current_location_marker'),
-  //         position: currentLocation,
-  //       ),
-  //   };
-  // }
+  String _formatType(String raw) {
+    if (raw.isEmpty) return 'Unknown';
+    final spaced = raw.replaceAllMapped(
+        RegExp(r'([a-z])([A-Z])'), (m) => '${m[1]} ${m[2]}');
+    return spaced[0].toUpperCase() + spaced.substring(1);
+  }
 
-  //<--------------------- Misc --------------------->
-  // void _toggleMode(bool value) async {
-  //   final prefs = await SharedPreferences.getInstance();
-  //   setState(() {
-  //     isHelping = value;
-  //     print(isHelping);
-  //     prefs.setBool('mode', isHelping);
-  //   });
-  // }
+  IconData _getIconForType(String type) {
+    final t = type.toLowerCase();
+    if (t.contains('pharmacy') || t.contains('drug')) return Icons.local_pharmacy;
+    if (t.contains('groc') || t.contains('food') || t.contains('ration')) return Icons.shopping_basket;
+    if (t.contains('hospital') || t.contains('clinic') || t.contains('medic')) return Icons.local_hospital;
+    if (t.contains('relief') || t.contains('camp')) return Icons.holiday_village;
+    if (t.contains('shelter') || t.contains('safe') || t.contains('space') || t.contains('home')) return Icons.home;
+    if (t.contains('suppl') || t.contains('hardware') || t.contains('inventor')) return Icons.inventory_2;
+    if (t.contains('rescue') || t.contains('boat') || t.contains('evac')) return Icons.emergency;
+    if (t.contains('water')) return Icons.water_drop;
+    if (t.contains('power') || t.contains('charg') || t.contains('bolt')) return Icons.bolt;
+    return Icons.volunteer_activism;
+  }
 
-  // <--------------------- Actions --------------------->
+  void _showAssistanceDrawer({String? initialHeading}) async {
+    try {
+      js.context.callMethod('setFlutterInteractive', [true]);
+    } catch (_) {}
 
-  // dynamic actionButtonClickFn() {
-  //   // Placeholder function to print the details
-  //   print("-------------------------------------------------------------------------------------------------");
-  //   print('Current Location: $currentLocation');
-  //   print('Selected Filter: $selectedFilter');
-  //   print('Selected Mode: ${isHelping ? "Helping" : "Need Help"}');
+    if (initialHeading != null && initialHeading.isNotEmpty) {
+      _fetchGroqShops(initialHeading);
+    }
 
-  // }
+    try {
+      await showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (BuildContext bc) {
+          return StatefulBuilder(
+            builder: (BuildContext context, StateSetter setModalState) {
+              final defaultItems = isHelping ? _giveItems : _needItems;
+              final bool isGroqActive = !isHelping && _activeGroqHeading.isNotEmpty;
+              final displayList = isGroqActive ? _groqShops : defaultItems;
 
-  // -----------------------------------------------------------------------------------------------------------------------------------------------
+              return Container(
+                height: MediaQuery.of(context).size.height * 0.82,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                  boxShadow: [
+                    BoxShadow(color: Colors.black26, blurRadius: 10, spreadRadius: 2)
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 12),
+                    // Drag handle
+                    Container(
+                      width: 44,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                    ),
+                    // Need Help / Give Help toggle inside drawer
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 14, 20, 6),
+                      child: Container(
+                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Color(0xFFEEEEEE),
+                          borderRadius: BorderRadius.circular(30),
+                        ),
+                        child: CupertinoSlidingSegmentedControl<int>(
+                          children: {
+                            0: Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              child: Text(
+                                'Need Help',
+                                style: GoogleFonts.getFont('Lexend',
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 15,
+                                    color: isHelping ? Colors.grey : Colors.redAccent),
+                              ),
+                            ),
+                            1: Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              child: Text(
+                                'Give Help',
+                                style: GoogleFonts.getFont('Lexend',
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 15,
+                                    color: isHelping ? Colors.blue : Colors.grey),
+                              ),
+                            ),
+                          },
+                          groupValue: isHelping ? 1 : 0,
+                          onValueChanged: (int? value) {
+                            setState(() {
+                              isHelping = value == 1;
+                              if (isHelping) _activeGroqHeading = '';
+                            });
+                            setModalState(() {});
+                          },
+                          backgroundColor: Color(0xFFEEEEEE),
+                          thumbColor: Colors.white,
+                        ),
+                      ),
+                    ),
+                    // Headings horizontal chips (when in Need Help mode)
+                    if (!isHelping)
+                      Container(
+                        height: 48,
+                        padding: EdgeInsets.symmetric(horizontal: 14),
+                        child: ListView(
+                          scrollDirection: Axis.horizontal,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 3.0),
+                              child: ChoiceChip(
+                                label: Text('All', style: GoogleFonts.getFont('Lexend', fontSize: 13, fontWeight: FontWeight.bold)),
+                                selected: _activeGroqHeading.isEmpty,
+                                onSelected: (val) {
+                                  setState(() {
+                                    _activeGroqHeading = '';
+                                    _groqShops.clear();
+                                  });
+                                  setModalState(() {});
+                                },
+                                selectedColor: Colors.black87,
+                                labelStyle: TextStyle(color: _activeGroqHeading.isEmpty ? Colors.white : Colors.black87),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                              ),
+                            ),
+                            ...filtersNeedHelp.map((f) {
+                              final isSel = _activeGroqHeading == f['type'];
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 3.0),
+                                child: ChoiceChip(
+                                  avatar: Icon(f['icon'], size: 16, color: isSel ? Colors.white : Colors.redAccent),
+                                  label: Text(
+                                    f['type'],
+                                    style: GoogleFonts.getFont('Lexend', fontSize: 13, fontWeight: FontWeight.w600),
+                                  ),
+                                  selected: isSel,
+                                  onSelected: (val) {
+                                    _fetchGroqShops(f['type'], setModalState);
+                                  },
+                                  selectedColor: Colors.redAccent,
+                                  labelStyle: TextStyle(color: isSel ? Colors.white : Colors.black87),
+                                  backgroundColor: Color(0xFFF1F5F9),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                ),
+                              );
+                            }).toList(),
+                          ],
+                        ),
+                      ),
+                    // Heading Title + Count Row
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 10, 20, 4),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Text(
+                                isHelping
+                                    ? 'Available Requests'
+                                    : (_activeGroqHeading.isNotEmpty
+                                        ? 'Nearby ${_activeGroqHeading} Shops'
+                                        : 'Nearby Assistance'),
+                                style: GoogleFonts.getFont(
+                                  'Lexend',
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 17,
+                                  color: Colors.black87,
+                                ),
+                              ),
+                              if (isGroqActive) ...[
+                                SizedBox(width: 6),
+                                Container(
+                                  padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.amber.withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.bolt, size: 12, color: Colors.amber[900]),
+                                      Text(
+                                        'Groq AI',
+                                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.amber[900]),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          Text(
+                            _isLoadingGroqShops
+                                ? 'Scanning...'
+                                : '${displayList.length} locations',
+                            style: GoogleFonts.getFont(
+                              'Lexend',
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Groq AI Status Pill
+                    if (isGroqActive)
+                      Container(
+                        margin: EdgeInsets.fromLTRB(16, 4, 16, 6),
+                        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Color(0xFFF0FDF4),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Color(0xFFBBF7D0)),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.my_location, color: Color(0xFF16A34A), size: 14),
+                            SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'GPS: (${currentLat.toStringAsFixed(3)}, ${currentLng.toStringAsFixed(3)}) • Showing nearby ${_activeGroqHeading}',
+                                style: GoogleFonts.getFont('Lexend', fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF166534)),
+                              ),
+                            ),
+                            InkWell(
+                              onTap: () {
+                                setState(() { _activeGroqHeading = ''; });
+                                setModalState(() {});
+                              },
+                              child: Icon(Icons.close, size: 16, color: Colors.grey[600]),
+                            ),
+                          ],
+                        ),
+                      ),
+                    const Divider(height: 1),
+                    // Body List
+                    Expanded(
+                      child: _isLoadingGroqShops
+                          ? Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(24.0),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    CircularProgressIndicator(color: Colors.redAccent),
+                                    SizedBox(height: 16),
+                                    Text(
+                                      'Locating nearby $_activeGroqHeading with Groq AI...',
+                                      style: GoogleFonts.getFont('Lexend', fontWeight: FontWeight.bold, fontSize: 14),
+                                    ),
+                                    SizedBox(height: 6),
+                                    Text(
+                                      'Searching shops around your current device coordinates',
+                                      style: GoogleFonts.getFont('Lexend', color: Colors.grey[600], fontSize: 12),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )
+                          : displayList.isEmpty
+                              ? Center(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.store_mall_directory_outlined, size: 48, color: Colors.grey[400]),
+                                      SizedBox(height: 12),
+                                      Text(
+                                        isGroqActive
+                                            ? 'No locations found for this heading'
+                                            : 'No locations found',
+                                        style: GoogleFonts.getFont('Lexend', color: Colors.grey[600]),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : ListView.separated(
+                                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                  itemCount: displayList.length,
+                                  separatorBuilder: (_, __) => SizedBox(height: 10),
+                                  itemBuilder: (context, index) {
+                                    final item = displayList[index];
+                                    final double itemLat = (item['location']?['lat'] as num?)?.toDouble() ?? currentLat;
+                                    final double itemLng = (item['location']?['lng'] as num?)?.toDouble() ?? currentLng;
+                                    final dist = Geolocator.distanceBetween(currentLat, currentLng, itemLat, itemLng);
+                                    final distStr = dist < 1000
+                                        ? '${dist.toStringAsFixed(0)}m'
+                                        : '${(dist / 1000).toStringAsFixed(1)}km';
+                                    final String name = item['name'] ?? (item['type'] ?? 'ASSISTANCE').toString().toUpperCase();
+                                    final String address = item['address'] ?? '';
+                                    final String hours = item['operating_hours'] ?? '';
+                                    final List<dynamic> itemsAvail = item['items_available'] ?? item['help'] ?? [];
+
+                                    return Container(
+                                      decoration: BoxDecoration(
+                                        color: Color(0xFFF8FAFC),
+                                        borderRadius: BorderRadius.circular(14),
+                                        border: Border.all(color: Color(0xFFE2E8F0)),
+                                      ),
+                                      child: InkWell(
+                                        borderRadius: BorderRadius.circular(14),
+                                        onTap: () {
+                                          Navigator.pop(context);
+                                          _showLocationDetails(context, item);
+                                        },
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(12.0),
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  Container(
+                                                    padding: EdgeInsets.all(8),
+                                                    decoration: BoxDecoration(
+                                                      color: (isHelping ? Colors.blue : Colors.redAccent).withOpacity(0.12),
+                                                      shape: BoxShape.circle,
+                                                    ),
+                                                    child: Icon(
+                                                      _getIconForType(item['type'] ?? _activeGroqHeading),
+                                                      color: isHelping ? Colors.blue : Colors.redAccent,
+                                                      size: 18,
+                                                    ),
+                                                  ),
+                                                  SizedBox(width: 10),
+                                                  Expanded(
+                                                    child: Column(
+                                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                                      children: [
+                                                        Row(
+                                                          children: [
+                                                            Expanded(
+                                                              child: Text(
+                                                                name,
+                                                                style: GoogleFonts.getFont(
+                                                                  'Lexend',
+                                                                  fontWeight: FontWeight.bold,
+                                                                  fontSize: 14,
+                                                                  color: Colors.black87,
+                                                                ),
+                                                              ),
+                                                            ),
+                                                            Container(
+                                                              padding: EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                                              decoration: BoxDecoration(
+                                                                color: Colors.blue.withOpacity(0.1),
+                                                                borderRadius: BorderRadius.circular(10),
+                                                              ),
+                                                              child: Text(
+                                                                distStr,
+                                                                style: GoogleFonts.getFont(
+                                                                  'Lexend',
+                                                                  fontSize: 11,
+                                                                  fontWeight: FontWeight.bold,
+                                                                  color: Colors.blue[800],
+                                                                ),
+                                                              ),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                        if (address.isNotEmpty) ...[
+                                                          SizedBox(height: 3),
+                                                          Row(
+                                                            children: [
+                                                              Icon(Icons.place, size: 12, color: Colors.grey[600]),
+                                                              SizedBox(width: 3),
+                                                              Expanded(
+                                                                child: Text(
+                                                                  address,
+                                                                  style: GoogleFonts.getFont(
+                                                                    'Lexend',
+                                                                    fontSize: 11,
+                                                                    color: Colors.grey[700],
+                                                                  ),
+                                                                  maxLines: 1,
+                                                                  overflow: TextOverflow.ellipsis,
+                                                                ),
+                                                              ),
+                                                            ],
+                                                          ),
+                                                        ],
+                                                        if (hours.isNotEmpty) ...[
+                                                          SizedBox(height: 2),
+                                                          Row(
+                                                            children: [
+                                                              Icon(Icons.access_time, size: 12, color: Colors.teal),
+                                                              SizedBox(width: 3),
+                                                              Text(
+                                                                hours,
+                                                                style: GoogleFonts.getFont(
+                                                                  'Lexend',
+                                                                  fontSize: 11,
+                                                                  color: Colors.teal[700],
+                                                                  fontWeight: FontWeight.w500,
+                                                                ),
+                                                              ),
+                                                            ],
+                                                          ),
+                                                        ],
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              if (itemsAvail.isNotEmpty) ...[
+                                                SizedBox(height: 8),
+                                                Wrap(
+                                                  spacing: 5,
+                                                  runSpacing: 4,
+                                                  children: itemsAvail.take(4).map<Widget>((it) {
+                                                    return Container(
+                                                      padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.white,
+                                                        borderRadius: BorderRadius.circular(6),
+                                                        border: Border.all(color: Color(0xFFCBD5E1)),
+                                                      ),
+                                                      child: Text(
+                                                        it.toString(),
+                                                        style: GoogleFonts.getFont('Lexend', fontSize: 10, color: Colors.black87),
+                                                      ),
+                                                    );
+                                                  }).toList(),
+                                                ),
+                                              ],
+                                              SizedBox(height: 8),
+                                              Row(
+                                                mainAxisAlignment: MainAxisAlignment.end,
+                                                children: [
+                                                  if (item['phone'] != null && item['phone'].toString().isNotEmpty)
+                                                    TextButton.icon(
+                                                      style: TextButton.styleFrom(
+                                                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                        minimumSize: Size(0, 0),
+                                                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                                      ),
+                                                      onPressed: () => launch('tel:${item['phone']}'),
+                                                      icon: Icon(Icons.call, size: 14, color: Colors.green[700]),
+                                                      label: Text('Call', style: TextStyle(fontSize: 11, color: Colors.green[700], fontWeight: FontWeight.bold)),
+                                                    ),
+                                                  SizedBox(width: 6),
+                                                  TextButton.icon(
+                                                    style: TextButton.styleFrom(
+                                                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                      minimumSize: Size(0, 0),
+                                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                                    ),
+                                                    onPressed: () {
+                                                      _openMapRoute(currentLat, currentLng, itemLat, itemLng);
+                                                    },
+                                                    icon: Icon(Icons.directions, size: 14, color: Colors.blue),
+                                                    label: Text('Route', style: TextStyle(fontSize: 11, color: Colors.blue, fontWeight: FontWeight.bold)),
+                                                  ),
+                                                  SizedBox(width: 6),
+                                                  TextButton.icon(
+                                                    style: TextButton.styleFrom(
+                                                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                      minimumSize: Size(0, 0),
+                                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                                    ),
+                                                    onPressed: () {
+                                                      Navigator.pop(context);
+                                                      js.context.callMethod('updateWindyLocation', [itemLat, itemLng]);
+                                                    },
+                                                    icon: Icon(Icons.map, size: 14, color: Colors.teal),
+                                                    label: Text('Map', style: TextStyle(fontSize: 11, color: Colors.teal, fontWeight: FontWeight.bold)),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      );
+    } finally {
+      try {
+        js.context.callMethod('setFlutterInteractive', [false]);
+      } catch (_) {}
+    }
+  }
+
+  Widget _buildTopFloatingBar() {
+    return Container(
+      height: 60,
+      padding: EdgeInsets.symmetric(horizontal: 12),
+      margin: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 8),
+      child: Row(
+        children: [
+          // Hamburger menu button
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(color: Colors.black26, blurRadius: 6, spreadRadius: 1)
+              ],
+            ),
+            child: IconButton(
+              icon: Icon(Icons.menu, color: Colors.black87),
+              tooltip: 'Nearby Assistance Menu',
+              onPressed: () => _showAssistanceDrawer(),
+            ),
+          ),
+          SizedBox(width: 10),
+          // Horizontal quick heading chips
+          Expanded(
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: filtersNeedHelp.map((f) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 3.0, vertical: 8.0),
+                  child: ActionChip(
+                    avatar: Icon(f['icon'], size: 16, color: Colors.redAccent),
+                    label: Text(
+                      f['type'],
+                      style: GoogleFonts.getFont('Lexend', fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black87),
+                    ),
+                    backgroundColor: Colors.white.withOpacity(0.95),
+                    elevation: 3,
+                    shadowColor: Colors.black26,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                    onPressed: () {
+                      _showAssistanceDrawer(initialHeading: f['type']);
+                    },
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOfflineWidget() {
+    return Container(
+      margin: EdgeInsets.all(20.0),
+      padding: EdgeInsets.all(16.0),
+      decoration: BoxDecoration(
+        color: Colors.redAccent,
+        borderRadius: BorderRadius.circular(10.0),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.error_outline, color: Colors.white),
+          SizedBox(width: 10.0),
+          Expanded(
+            child: Text(
+              'No network connection, switching to SMS mode',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 13.0,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilterBar() {
+    List<Map<String, dynamic>> currentFilters =
+        isHelping ? filtersGiveHelp : filtersNeedHelp;
+    return Container(
+      height: 60,
+      padding: EdgeInsets.symmetric(horizontal: 10),
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: currentFilters.length,
+        itemBuilder: (BuildContext context, int index) {
+          Map<String, dynamic> filter = currentFilters[index];
+          bool isSelected = filter['type'] == selectedFilter;
+
+          return Container(
+            margin: EdgeInsets.symmetric(horizontal: 3),
+            child: FilterChip(
+              avatar: Icon(filter['icon'],
+                  color: isSelected ? Colors.white : Colors.grey),
+              label: Text(filter['type'],
+                  style: GoogleFonts.getFont('Lexend',
+                      fontWeight: FontWeight.w500,
+                      fontSize: 16,
+                      color: isSelected ? Colors.white : Colors.grey)),
+              selected: isSelected,
+              onSelected: (bool value) {
+                setState(() {
+                  selectedFilter = value ? filter['type'] : '';
+                });
+              },
+              backgroundColor: Color.fromARGB(255, 227, 227, 227),
+              selectedColor: isHelping
+                  ? Color.fromARGB(255, 137, 202, 255)
+                  : Color.fromARGB(255, 250, 121, 121),
+              checkmarkColor: Colors.transparent,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(30),
+                side: BorderSide(
+                  color: isSelected ? Colors.transparent : Colors.transparent,
+                ),
+              ),
+              shadowColor: Colors.black,
+              elevation: 3,
+              showCheckmark: false,
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget recenterBtn() {
+    return Positioned(
+      right: 16.0,
+      bottom: 110.0,
+      child: FloatingActionButton(
+        mini: false,
+        child: Icon(Icons.streetview, color: Colors.black),
+        backgroundColor: Colors.white,
+        onPressed: () {
+          js.context
+              .callMethod('updateWindyLocation', [currentLat, currentLng]);
+          _loadJsonData();
+        },
+      ),
+    );
+  }
+
+  Widget actionBtn(isHelping, selectedFilter) {
+    return Positioned(
+      right: 16.0,
+      bottom: 45.0,
+      child: buildFloatingActionButton(
+        isHelping: isHelping,
+        selectedFilter: selectedFilter,
+      ),
+    );
+  }
+
+  Widget buildFloatingActionButton({
+    required bool isHelping,
+    required String selectedFilter,
+  }) {
+    return FloatingActionButton(
+      child: Icon(
+        isHelping
+            ? Icons.favorite
+            : Icons.volunteer_activism,
+        color: Colors.white,
+      ),
+      backgroundColor: isHelping
+          ? Color.fromARGB(255, 137, 202, 255)
+          : Color.fromARGB(255, 250, 121, 121),
+      onPressed: actionButtonClickFn,
+    );
+  }
+
+  Widget _buildItemsPanel() {
+    final items = _getFilteredItems();
+    if (items.isEmpty) return SizedBox.shrink();
+    return Positioned(
+      bottom: 90,
+      left: 0,
+      right: 0,
+      child: SizedBox(
+        height: 100,
+        child: ListView.builder(
+          scrollDirection: Axis.horizontal,
+          padding: EdgeInsets.symmetric(horizontal: 10),
+          itemCount: items.length,
+          itemBuilder: (context, index) {
+            final item = items[index];
+            final loc2 = item['location'] as Map<String, dynamic>?;
+            final double itemLat =
+                (loc2?['lat'] as num?)?.toDouble() ?? currentLat;
+            final double itemLng =
+                (loc2?['lng'] as num?)?.toDouble() ?? currentLng;
+            final dist = Geolocator.distanceBetween(
+                currentLat, currentLng, itemLat, itemLng);
+            final distStr = dist < 1000
+                ? '${dist.toStringAsFixed(0)}m'
+                : '${(dist / 1000).toStringAsFixed(1)}km';
+            return GestureDetector(
+              onTap: () => _showLocationDetails(context, item),
+              child: Container(
+                width: 140,
+                margin: EdgeInsets.symmetric(horizontal: 5),
+                padding: EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.93),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 4)],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      (item['type'] ?? '').toString().toUpperCase(),
+                      style: GoogleFonts.getFont('Lexend',
+                          fontWeight: FontWeight.bold, fontSize: 12),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    SizedBox(height: 4),
+                    Row(children: [
+                      Icon(Icons.place, size: 12, color: Colors.grey),
+                      SizedBox(width: 2),
+                      Text(distStr,
+                          style: GoogleFonts.getFont('Lexend',
+                              fontSize: 11, color: Colors.grey)),
+                    ]),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
 
   void makePostRequest(List<String> selectedHelp, bool isHelping, dynamic lat,
       dynamic lng) async {
@@ -521,11 +1353,9 @@ class _HomeState extends State<Home> {
     );
 
     if (response.statusCode == 200) {
-      // Request successful
       print('POST request successful');
       print('Response: ${response.body}');
     } else {
-      // Request failed
       print('POST request failed with status: ${response.statusCode}');
       print('Response: ${response.body}');
     }
@@ -695,520 +1525,6 @@ class _HomeState extends State<Home> {
         js.context.callMethod('setFlutterInteractive', [false]);
       } catch (_) {}
     }
-  }
-
-  // <--------------------- UI --------------------->
-
-  String _formatType(String raw) {
-    if (raw.isEmpty) return 'Unknown';
-    // Split camelCase into words e.g. reliefCamp → Relief Camp
-    final spaced = raw.replaceAllMapped(
-        RegExp(r'([a-z])([A-Z])'), (m) => '${m[1]} ${m[2]}');
-    return spaced[0].toUpperCase() + spaced.substring(1);
-  }
-
-  IconData _getIconForType(String type) {
-    final t = type.toLowerCase();
-    if (t.contains('hospital') || t.contains('medic'))
-      return FontAwesomeIcons.truckMedical;
-    if (t.contains('rescue') || t.contains('boat') || t.contains('evac'))
-      return FontAwesomeIcons.lifeRing;
-    if (t.contains('water'))
-      return FontAwesomeIcons.faucetDrip;
-    if (t.contains('power') || t.contains('charg') || t.contains('bolt'))
-      return FontAwesomeIcons.bolt;
-    if (t.contains('relief') || t.contains('camp'))
-      return FontAwesomeIcons.tent;
-    if (t.contains('safe') || t.contains('space') || t.contains('shelter'))
-      return FontAwesomeIcons.home;
-    if (t.contains('supplies') || t.contains('food'))
-      return FontAwesomeIcons.boxOpen;
-    return FontAwesomeIcons.handsHelping;
-  }
-
-  void _showAssistanceDrawer() async {
-    try {
-      js.context.callMethod('setFlutterInteractive', [true]);
-    } catch (_) {}
-    try {
-      await showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        builder: (BuildContext bc) {
-          return StatefulBuilder(
-            builder: (BuildContext context, StateSetter setModalState) {
-              final items = isHelping ? _giveItems : _needItems;
-              return Container(
-                height: MediaQuery.of(context).size.height * 0.75,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-                  boxShadow: [
-                    BoxShadow(
-                        color: Colors.black26, blurRadius: 10, spreadRadius: 2)
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    const SizedBox(height: 12),
-                    // Drag handle
-                    Container(
-                      width: 44,
-                      height: 5,
-                      decoration: BoxDecoration(
-                        color: Colors.grey[300],
-                        borderRadius: BorderRadius.circular(3),
-                      ),
-                    ),
-                    // Need Help / Give Help toggle inside drawer
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
-                      child: Container(
-                        padding:
-                            EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Color(0xFFEEEEEE),
-                          borderRadius: BorderRadius.circular(30),
-                        ),
-                        child: CupertinoSlidingSegmentedControl<int>(
-                          children: {
-                            0: Padding(
-                              padding: EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 6),
-                              child: Text(
-                                'Need Help',
-                                style: GoogleFonts.getFont('Lexend',
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 15,
-                                    color: isHelping
-                                        ? Colors.grey
-                                        : Colors.redAccent),
-                              ),
-                            ),
-                            1: Padding(
-                              padding: EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 6),
-                              child: Text(
-                                'Give Help',
-                                style: GoogleFonts.getFont('Lexend',
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 15,
-                                    color:
-                                        isHelping ? Colors.blue : Colors.grey),
-                              ),
-                            ),
-                          },
-                          groupValue: isHelping ? 1 : 0,
-                          onValueChanged: (int? value) {
-                            setState(() {
-                              isHelping = value == 1;
-                            });
-                            setModalState(() {});
-                          },
-                          backgroundColor: Color(0xFFEEEEEE),
-                          thumbColor: Colors.white,
-                        ),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 10, 20, 4),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            isHelping
-                                ? 'Available Requests'
-                                : 'Nearby Assistance',
-                            style: GoogleFonts.getFont(
-                              'Lexend',
-                              fontWeight: FontWeight.bold,
-                              fontSize: 18,
-                              color: Colors.black87,
-                            ),
-                          ),
-                          Text(
-                            '${items.length} locations',
-                            style: GoogleFonts.getFont(
-                              'Lexend',
-                              fontSize: 13,
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Divider(height: 1),
-                    Expanded(
-                      child: items.isEmpty
-                          ? Center(
-                              child: Text(
-                                'No locations found',
-                                style: GoogleFonts.getFont('Lexend',
-                                    color: Colors.grey),
-                              ),
-                            )
-                          : ListView.separated(
-                              padding: EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 12),
-                              itemCount: items.length,
-                              separatorBuilder: (_, __) => SizedBox(height: 8),
-                              itemBuilder: (context, index) {
-                                final item = items[index];
-                                final loc =
-                                    item['location'] as Map<String, dynamic>?;
-                                final double itemLat =
-                                    (loc?['lat'] as num?)?.toDouble() ??
-                                        currentLat;
-                                final double itemLng =
-                                    (loc?['lng'] as num?)?.toDouble() ??
-                                        currentLng;
-                                final dist = Geolocator.distanceBetween(
-                                    currentLat, currentLng, itemLat, itemLng);
-                                final distStr = dist < 1000
-                                    ? '${dist.toStringAsFixed(0)}m'
-                                    : '${(dist / 1000).toStringAsFixed(1)}km';
-                                final String rawType =
-                                    (item['type'] ?? '').toString();
-                                final String type = _formatType(rawType);
-                                final String typeUpper = rawType.toUpperCase();
-                                return ListTile(
-                                  tileColor: Color(0xFFF7F8FA),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  leading: Container(
-                                    padding: EdgeInsets.all(10),
-                                    decoration: BoxDecoration(
-                                      color: (isHelping
-                                              ? Colors.blue
-                                              : Colors.redAccent)
-                                          .withOpacity(0.12),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: Icon(
-                                      _getIconForType(typeUpper),
-                                      color: isHelping
-                                          ? Colors.blue
-                                          : Colors.redAccent,
-                                      size: 18,
-                                    ),
-                                  ),
-                                  title: Text(
-                                    (item['name'] != null && item['name'].toString().isNotEmpty)
-                                        ? item['name'].toString()
-                                        : type,
-                                    style: GoogleFonts.getFont(
-                                      'Lexend',
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                  subtitle: Row(
-                                    children: [
-                                      Icon(Icons.place,
-                                          size: 13, color: Colors.grey),
-                                      SizedBox(width: 3),
-                                      Text(
-                                        distStr,
-                                        style: GoogleFonts.getFont(
-                                          'Lexend',
-                                          fontSize: 12,
-                                          color: Colors.grey[700],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  trailing: Icon(Icons.chevron_right,
-                                      color: Colors.grey),
-                                  onTap: () {
-                                    Navigator.pop(context);
-                                    _showLocationDetails(context, item);
-                                  },
-                                );
-                              },
-                            ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          );
-        },
-      );
-    } finally {
-      try {
-        js.context.callMethod('setFlutterInteractive', [false]);
-      } catch (_) {}
-    }
-  }
-
-  Widget _buildTopFloatingBar() {
-    final topPadding = MediaQuery.of(context).padding.top;
-    return Container(
-      height: 48,
-      margin: EdgeInsets.only(top: topPadding > 0 ? topPadding + 6 : 14),
-      padding: EdgeInsets.symmetric(horizontal: 14),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          // Hamburger menu button pinned to the left
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(color: Colors.black26, blurRadius: 6, spreadRadius: 1)
-                ],
-              ),
-              child: IconButton(
-                padding: EdgeInsets.zero,
-                icon: Icon(Icons.menu, color: Colors.black87, size: 21),
-                tooltip: 'Menu',
-                onPressed: _showAssistanceDrawer,
-              ),
-            ),
-          ),
-          // Need Help / Give Help Toggle Pill perfectly centered
-          Center(
-            child: Container(
-              padding: EdgeInsets.symmetric(horizontal: 3, vertical: 3),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(30),
-                boxShadow: [
-                  BoxShadow(color: Colors.black26, blurRadius: 8, spreadRadius: 1)
-                ],
-              ),
-              child: CupertinoSlidingSegmentedControl<int>(
-                children: {
-                  0: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 11, vertical: 5),
-                    child: Text(
-                      'Need Help',
-                      style: GoogleFonts.getFont('Lexend',
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12.5,
-                          color: isHelping ? Colors.grey : Colors.redAccent),
-                    ),
-                  ),
-                  1: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 11, vertical: 5),
-                    child: Text(
-                      'Give Help',
-                      style: GoogleFonts.getFont('Lexend',
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12.5,
-                          color: isHelping ? Colors.blue : Colors.grey),
-                    ),
-                  ),
-                },
-                groupValue: isHelping ? 1 : 0,
-                onValueChanged: (int? value) {
-                  setState(() {
-                    isHelping = value == 1;
-                    selectedFilter = '';
-                  });
-                },
-                backgroundColor: Color(0xFFEEEEEE),
-                thumbColor: Colors.white,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildOfflineWidget() {
-    return Container(
-      margin: EdgeInsets.all(20.0),
-      padding: EdgeInsets.all(16.0),
-      decoration: BoxDecoration(
-        color: Colors.redAccent,
-        borderRadius: BorderRadius.circular(10.0),
-      ),
-      child: const Row(
-        children: [
-          Icon(Icons.error_outline, color: Colors.white),
-          SizedBox(width: 10.0),
-          Expanded(
-            child: Text(
-              'No network connection, switching to SMS mode',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 13.0,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFilterBar() {
-    List<Map<String, dynamic>> currentFilters =
-        isHelping ? filtersGiveHelp : filtersNeedHelp;
-    return Container(
-      height: 60,
-      padding: EdgeInsets.symmetric(horizontal: 10),
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        itemCount: currentFilters.length,
-        itemBuilder: (BuildContext context, int index) {
-          Map<String, dynamic> filter = currentFilters[index];
-          bool isSelected = filter['type'] == selectedFilter;
-
-          return Container(
-            margin: EdgeInsets.symmetric(horizontal: 3),
-            child: FilterChip(
-              avatar: Icon(filter['icon'],
-                  color: isSelected ? Colors.white : Colors.grey),
-              label: Text(filter['type'],
-                  style: GoogleFonts.getFont('Lexend',
-                      fontWeight: FontWeight.w500,
-                      fontSize: 16,
-                      color: isSelected ? Colors.white : Colors.grey)),
-              selected: isSelected,
-              onSelected: (bool value) {
-                setState(() {
-                  selectedFilter = value ? filter['type'] : '';
-                });
-              },
-              backgroundColor: Color.fromARGB(255, 227, 227, 227),
-              selectedColor: isHelping
-                  ? Color.fromARGB(255, 137, 202, 255)
-                  : Color.fromARGB(255, 250, 121, 121),
-              checkmarkColor: Colors.transparent,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(30),
-                side: BorderSide(
-                  color: isSelected ? Colors.transparent : Colors.transparent,
-                ),
-              ),
-              shadowColor: Colors.black,
-              elevation: 3,
-              showCheckmark: false,
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget recenterBtn() {
-    return Positioned(
-      right: 16.0,
-      bottom: 110.0,
-      child: FloatingActionButton(
-        mini: false,
-        child: Icon(FontAwesomeIcons.streetView, color: Colors.black),
-        backgroundColor: Colors.white,
-        onPressed: () {
-          js.context
-              .callMethod('updateWindyLocation', [currentLat, currentLng]);
-          _loadJsonData();
-        },
-      ),
-    );
-  }
-
-  Widget actionBtn(isHelping, selectedFilter) {
-    return Positioned(
-      right: 16.0,
-      bottom: 45.0,
-      child: buildFloatingActionButton(
-        isHelping: isHelping,
-        selectedFilter: selectedFilter,
-      ),
-    );
-  }
-
-  Widget buildFloatingActionButton({
-    required bool isHelping,
-    required String selectedFilter,
-  }) {
-    return FloatingActionButton(
-      child: Icon(
-        isHelping
-            ? FontAwesomeIcons.handHoldingHeart
-            : FontAwesomeIcons.handsHelping,
-        color: Colors.white,
-      ),
-      backgroundColor: isHelping
-          ? Color.fromARGB(255, 137, 202, 255)
-          : Color.fromARGB(255, 250, 121, 121),
-      onPressed: actionButtonClickFn,
-    );
-  }
-
-  Widget _buildItemsPanel() {
-    final items = _getFilteredItems();
-    if (items.isEmpty) return SizedBox.shrink();
-    return Positioned(
-      bottom: 90,
-      left: 0,
-      right: 0,
-      child: SizedBox(
-        height: 100,
-        child: ListView.builder(
-          scrollDirection: Axis.horizontal,
-          padding: EdgeInsets.symmetric(horizontal: 10),
-          itemCount: items.length,
-          itemBuilder: (context, index) {
-            final item = items[index];
-            final loc2 = item['location'] as Map<String, dynamic>?;
-            final double itemLat =
-                (loc2?['lat'] as num?)?.toDouble() ?? currentLat;
-            final double itemLng =
-                (loc2?['lng'] as num?)?.toDouble() ?? currentLng;
-            final dist = Geolocator.distanceBetween(
-                currentLat, currentLng, itemLat, itemLng);
-            final distStr = dist < 1000
-                ? '${dist.toStringAsFixed(0)}m'
-                : '${(dist / 1000).toStringAsFixed(1)}km';
-            return GestureDetector(
-              onTap: () => _showLocationDetails(context, item),
-              child: Container(
-                width: 140,
-                margin: EdgeInsets.symmetric(horizontal: 5),
-                padding: EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.93),
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 4)],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      (item['type'] ?? '').toString().toUpperCase(),
-                      style: GoogleFonts.getFont('Lexend',
-                          fontWeight: FontWeight.bold, fontSize: 12),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    SizedBox(height: 4),
-                    Row(children: [
-                      Icon(Icons.place, size: 12, color: Colors.grey),
-                      SizedBox(width: 2),
-                      Text(distStr,
-                          style: GoogleFonts.getFont('Lexend',
-                              fontSize: 11, color: Colors.grey)),
-                    ]),
-                  ],
-                ),
-              ),
-            );
-          },
-        ),
-      ),
-    );
   }
 
   // <--------------------- Build --------------------->

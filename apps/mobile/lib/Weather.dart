@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'dart:convert';
 import 'package:flutter_config/flutter_config.dart';
 import 'package:http/http.dart' as http;
@@ -12,7 +11,8 @@ String _safeBackendUrl() {
     final val = FlutterConfig.get('BACKEND_URL');
     if (val != null && val.toString().isNotEmpty) return val.toString();
   } catch (_) {}
-  return 'http://172.25.179.252:8080';
+  final host = Uri.base.host.isNotEmpty ? Uri.base.host : 'localhost';
+  return 'http://$host:8080';
 }
 
 class WeatherScreen extends StatefulWidget {
@@ -104,23 +104,23 @@ class _WeatherScreenState extends State<WeatherScreen> {
   IconData _getWeatherIcon(String weather) {
     switch (weather.toLowerCase()) {
       case 'partly cloudy':
-        return FontAwesomeIcons.cloudSun;
+        return Icons.wb_cloudy;
       case 'sunny':
-        return FontAwesomeIcons.sun;
+        return Icons.wb_sunny;
       case 'rainy':
-        return FontAwesomeIcons.cloudShowersHeavy;
+        return Icons.grain;
       case 'thunderstorm':
-        return FontAwesomeIcons.bolt;
+        return Icons.bolt;
       case 'snowy':
-        return FontAwesomeIcons.snowflake;
+        return Icons.ac_unit;
       case 'windy':
-        return FontAwesomeIcons.wind;
+        return Icons.air;
       case 'foggy':
-        return FontAwesomeIcons.smog;
+        return Icons.foggy;
       case 'hail':
-        return FontAwesomeIcons.cloudMeatball;
+        return Icons.cloudy_snowing;
       default:
-        return FontAwesomeIcons.questionCircle;
+        return Icons.help_outline;
     }
   }
 
