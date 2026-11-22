@@ -45,7 +45,7 @@ jobs:
         working-directory: apps/mobile
         run: |
           touch .env
-          flutter pub get
+          flutter pub upgrade
 
       - name: Build Android Release APK
         working-directory: apps/mobile
