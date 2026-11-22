@@ -83,7 +83,7 @@ jobs:
       - name: Build Android Release APK
         working-directory: apps/mobile
         run: |
-          flutter build apk --release --dart-define=ENVIRONMENT=prod
+          flutter build apk --release --verbose --dart-define=ENVIRONMENT=prod
 
       - name: Build Android App Bundle (AAB)
         working-directory: apps/mobile

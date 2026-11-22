@@ -1,4 +1,4 @@
-package com.example.mobile
+package com.cyclonex.app
 
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager

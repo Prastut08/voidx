@@ -1,4 +1,4 @@
-package com.example.mobile
+package com.cyclonex.app
 
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
