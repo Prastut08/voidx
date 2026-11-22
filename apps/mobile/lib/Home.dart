@@ -181,6 +181,7 @@ class _HomeState extends State<Home> {
       });
       // Update Windy map in the HTML background via JS
       js.context.callMethod('updateWindyLocation', [currentLat, currentLng]);
+      _loadJsonData();
     } catch (e) {
       debugPrint('Location error: $e');
       setState(() {
@@ -190,8 +191,7 @@ class _HomeState extends State<Home> {
   }
 
   Future<void> _loadJsonData() async {
-    final url = Uri.parse(_safeBackendUrl() + "/api/v1");
-    // final url = Uri.parse('https://flask-7i2vfdwx7q-el.a.run.app/api/v1');
+    final url = Uri.parse('${_safeBackendUrl()}/api/v1/?lat=$currentLat&lng=$currentLng');
     try {
       final response = await http.get(url);
       if (response.statusCode == 200) {
@@ -544,23 +544,32 @@ class _HomeState extends State<Home> {
       String phoneNumber =
           prefs.getString('phoneNumber') ?? 'No phone number set';
 
-      Map<String, IconData> helpIcons = {
-        'Volunteer': Icons.volunteer_activism,
-        'Donate': Icons.monetization_on,
-        'Provide Shelter': Icons.house,
-        'Offer Food': Icons.food_bank,
+      Map<String, IconData> needHelpIcons = {
         'Medical': Icons.medical_services,
+        'Rescue & Evacuation': Icons.emergency,
         'Shelter': Icons.house,
-        'Food': Icons.fastfood,
+        'Food & Rations': Icons.fastfood,
+        'Clean Water': Icons.water_drop,
         'Clothing': Icons.checkroom,
+        'Power & Charging': Icons.bolt,
         'Other': Icons.help_outline,
       };
 
-      Map<String, bool> helpOptions = Map.fromIterable(
-        isHelping ? helpIcons.keys.take(4) : helpIcons.keys.skip(4),
-        key: (item) => item as String,
-        value: (item) => false,
-      );
+      Map<String, IconData> giveHelpIcons = {
+        'Volunteer': Icons.volunteer_activism,
+        'Donate Supplies': Icons.monetization_on,
+        'Provide Shelter': Icons.house,
+        'Offer Food & Water': Icons.food_bank,
+        'Medical Assistance': Icons.medical_services,
+        'Rescue / Boat Unit': Icons.directions_boat,
+      };
+
+      Map<String, IconData> activeIcons =
+          isHelping ? giveHelpIcons : needHelpIcons;
+
+      Map<String, bool> helpOptions = {
+        for (var item in activeIcons.keys) item: false,
+      };
 
       bool isAnyOptionSelected() {
         return helpOptions.containsValue(true);
@@ -605,16 +614,16 @@ class _HomeState extends State<Home> {
                             padding: EdgeInsets.symmetric(vertical: 15),
                             decoration: BoxDecoration(
                               border: isSelected
-                                  ? Border.all(
-                                      color: Theme.of(context).primaryColor,
-                                      width: 2)
-                                  : Border.all(color: Colors.grey[300]!),
+                                   ? Border.all(
+                                       color: Theme.of(context).primaryColor,
+                                       width: 2)
+                                   : Border.all(color: Colors.grey[300]!),
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: Row(
                               children: [
                                 SizedBox(width: 15),
-                                Icon(helpIcons[option],
+                                Icon(activeIcons[option],
                                     color: isSelected
                                         ? Theme.of(context).primaryColor
                                         : Colors.grey),
@@ -700,7 +709,14 @@ class _HomeState extends State<Home> {
 
   IconData _getIconForType(String type) {
     final t = type.toLowerCase();
-    if (t.contains('hospital')) return FontAwesomeIcons.truckMedical;
+    if (t.contains('hospital') || t.contains('medic'))
+      return FontAwesomeIcons.truckMedical;
+    if (t.contains('rescue') || t.contains('boat') || t.contains('evac'))
+      return FontAwesomeIcons.lifeRing;
+    if (t.contains('water'))
+      return FontAwesomeIcons.faucetDrip;
+    if (t.contains('power') || t.contains('charg') || t.contains('bolt'))
+      return FontAwesomeIcons.bolt;
     if (t.contains('relief') || t.contains('camp'))
       return FontAwesomeIcons.tent;
     if (t.contains('safe') || t.contains('space') || t.contains('shelter'))
@@ -879,7 +895,9 @@ class _HomeState extends State<Home> {
                                     ),
                                   ),
                                   title: Text(
-                                    type,
+                                    (item['name'] != null && item['name'].toString().isNotEmpty)
+                                        ? item['name'].toString()
+                                        : type,
                                     style: GoogleFonts.getFont(
                                       'Lexend',
                                       fontWeight: FontWeight.bold,
@@ -1093,6 +1111,7 @@ class _HomeState extends State<Home> {
         onPressed: () {
           js.context
               .callMethod('updateWindyLocation', [currentLat, currentLng]);
+          _loadJsonData();
         },
       ),
     );
