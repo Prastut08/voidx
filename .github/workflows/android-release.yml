@@ -47,7 +47,9 @@ jobs:
 
       - name: Install Dependencies
         working-directory: apps/mobile
-        run: flutter pub get
+        run: |
+          touch .env
+          flutter pub get
 
       - name: Verify Code Formatting
         working-directory: apps/mobile
