@@ -1,10 +1,10 @@
-name: Sahaya
-description: "Your disaster management app."
+name: cyclonex
+description: "CycloneX — Intelligent Cyclone Monitoring and Emergency Rescue Coordination"
 publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: '>=2.12.0 <4.0.0'
+  sdk: '>=3.0.0 <4.0.0'
 
 dependencies:
   flutter:
@@ -17,7 +17,7 @@ dependencies:
   intl_phone_field:
   url_launcher:
   shared_preferences:
-  geolocator: 
+  geolocator:
   custom_sliding_segmented_control:
   internet_connection_checker: ^0.0.1
   material_segmented_control:
@@ -26,6 +26,8 @@ dependencies:
   http:
   flutter_local_notifications:
   timezone:
+  web_socket_channel: ^2.4.5
+  uuid: ^4.4.0
 
 
 dependency_overrides:

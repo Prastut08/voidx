@@ -1,21 +1,24 @@
 // core/constants.dart
+import '../config/app_config.dart';
+
 class AppConstants {
-  // Backend — change to your server IP for device testing
-  static const String backendBase = 'http://172.25.179.252:8080';
-  static const String wsBase      = 'ws://172.25.179.252:8080';
+  // Backend & WebSocket URLs dynamically resolved from centralized AppConfig
+  static String get backendBase => AppConfig.baseUrl;
+  static String get wsBase      => AppConfig.wsUrl;
 
   // API routes (match fastapi_server.py exactly)
-  static const String apiSosCreate      = '/api/sos/create';
-  static const String apiSosList        = '/api/sos/list';
-  static const String apiSosAccept      = '/api/sos/{id}/accept';
-  static const String apiSosStatus      = '/api/sos/{id}/status';
-  static const String apiRescueTeams    = '/api/rescue/teams';
-  static const String apiRescueNearby   = '/api/rescue/nearby';
-  static const String apiChatEmergency  = '/api/chat/emergency';
-  static const String apiCyclonesActive = '/api/cyclones/active';
-  static const String apiCyclonesHealth = '/api/cyclones/health';
-  static const String apiOfflineSync    = '/api/offline/sync';
-  static const String wsRescue          = '/ws/rescue';
+  static const String apiSosCreate      = AppConfig.apiSosCreate;
+  static const String apiSosList        = AppConfig.apiSosList;
+  static const String apiSosAccept      = AppConfig.apiSosAccept;
+  static const String apiSosStatus      = AppConfig.apiSosStatus;
+  static const String apiRescueTeams    = AppConfig.apiRescueTeams;
+  static const String apiRescueNearby   = AppConfig.apiRescueNearby;
+  static const String apiChatEmergency  = AppConfig.apiChatEmergency;
+  static const String apiCyclonesActive = AppConfig.apiCyclonesActive;
+  static const String apiCyclonesHealth = AppConfig.apiCyclonesHealth;
+  static const String apiOfflineRelay   = AppConfig.apiOfflineRelay;
+  static const String apiOfflineSync    = AppConfig.apiOfflineSync;
+  static const String wsRescue          = AppConfig.wsRescue;
 
   // SharedPrefs keys
   static const String prefUserId    = 'userId';

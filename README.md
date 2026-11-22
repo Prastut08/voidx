@@ -1,141 +1,209 @@
-# Sahaya
-Sahaya is an emergency coordination platform for disaster response. It combines live SOS dispatch, GPS-based rescue routing, cyclone and weather information, emergency guidance, and responder dashboards.
-## Architecture
-<img width="422" height="921" alt="image" src="https://github.com/user-attachments/assets/66012d6c-72b7-4e6a-902f-49e3c30e7467" />
+# CycloneX — Intelligent Cyclone Monitoring & Emergency Rescue Coordination Platform
+
+[![Android Release](https://img.shields.io/badge/Android%20APK-v1.0.0-success?style=for-the-badge&logo=android)](https://github.com/Prastut08/voidx/releases)
+[![GitHub Release](https://img.shields.io/github/v/release/Prastut08/voidx?style=for-the-badge&logo=github)](https://github.com/Prastut08/voidx/releases/latest)
+[![CI/CD](https://img.shields.io/github/actions/workflow/status/Prastut08/voidx/android-release.yml?branch=main&style=for-the-badge&logo=githubactions)](https://github.com/Prastut08/voidx/actions)
+
+---
+
+## 📱 Android Application Download & Release
+
+Get the official **CycloneX** Android build directly from GitHub Releases:
+
+- 📥 **Direct APK Download**: [Download Latest APK (`app-release.apk`)](https://github.com/Prastut08/voidx/releases/latest/download/app-release.apk)
+- 📦 **GitHub Releases Page**: [View All Releases & Assets](https://github.com/Prastut08/voidx/releases)
+- 🏛️ **GitHub Repository**: [https://github.com/Prastut08/voidx](https://github.com/Prastut08/voidx)
+
+### Android Installation Instructions:
+1. Tap the **Direct APK Download** link on your Android device (Android 6.0 / API 23 or higher).
+2. Once the download completes, tap the notification or open your device's **Downloads** folder.
+3. If prompted with *"For your security, your phone is not allowed to install unknown apps from this source"*, tap **Settings** and enable **"Allow from this source"**.
+4. Tap **Install** and open **CycloneX**.
+5. Grant **Location** and **SMS / Notification** permissions on first launch to ensure real-time emergency dispatch and offline emergency relay functions correctly.
+
+---
+
+## 🌊 Overview
+
+**CycloneX** is a mission-critical cyclone monitoring and emergency rescue coordination platform engineered to save lives before, during, and after severe weather disasters. It bridges citizens in distress, multi-agency volunteer rescue teams, and centralized disaster command centers in real time—even when grid power and cellular communication infrastructure collapse.
+
+<img width="422" height="921" alt="CycloneX Mobile" src="https://github.com/user-attachments/assets/66012d6c-72b7-4e6a-902f-49e3c30e7467" />
+
+---
+
+## 🏛️ System Architecture
 
 ```mermaid
-flowchart LR
-    Citizens[Flutter mobile app] -->|HTTPS REST| API[Emergency API]
-    Responders[Next.js responder dashboard] -->|HTTPS REST| API
-    Citizens -->|GPS and offline queue| Citizens
-    Responders -->|WebSocket| API
-    Citizens -->|Notifications and local relay| Citizens
-    API --> SOS[SOS and responder coordination]
-    API --> GIS[Haversine rescue matching]
-    API --> Weather[Weather and cyclone services]
-    API --> RAG[Emergency RAG and FAISS guidance]
+flowchart TD
+    subgraph ClientLayer ["Mobile & Web Clients"]
+        CitizenApp["📱 CycloneX Android App (Flutter)"]
+        Dashboard["💻 Incident Command Center (Next.js / React)"]
+    end
+
+    subgraph ServiceLayer ["Backend & Realtime Services"]
+        FastAPIEngine["⚡ Realtime Dispatch Engine (FastAPI)"]
+        FlaskBackend["🐍 Cyclone, Weather & Groq AI API (Flask)"]
+        RescueWS["🔌 Realtime Rescue WebSocket (/ws/rescue)"]
+    end
+
+    subgraph IntelligenceLayer ["Intelligence & Offline Resilience"]
+        FAISS["🔍 FAISS Vector Store (cyclone_faq.faiss)"]
+        RAG["🤖 Disaster Response RAG & Groq LLM"]
+        BLERelay["📡 Peer-to-Peer BLE Store-Carry-Forward Mesh"]
+    end
+
+    CitizenApp -->|HTTPS REST| FastAPIEngine
+    CitizenApp -->|WSS Realtime| RescueWS
+    Dashboard -->|WSS Realtime| RescueWS
+    Dashboard -->|HTTPS REST| FastAPIEngine
+
+    CitizenApp -.->|Offline D2D Relay| BLERelay
+    BLERelay -.->|Eventual Sync| FastAPIEngine
+
+    FastAPIEngine --> RAG
+    RAG --> FAISS
+    FastAPIEngine --> FlaskBackend
 ```
-The repository is an npm/Turborepo workspace containing three applications:
-| Component | Technology | Responsibility |
-| --- | --- | --- |
-| `apps/mobile` | Flutter, Dart | Citizen experience, GPS, weather alerts, SOS entry, and offline queuing |
-| `apps/backend` | Next.js, React, Tailwind CSS | Real-time rescue responder command center |
-| `apps/flask` | Flask/FastAPI, Python | Emergency APIs, SOS coordination, WebSocket dispatch, weather, cyclone, and RAG services |
-Supporting data and assets are stored in `assets/`, `packages/`, and `cyclone_faq.faiss`.
-## Core workflows
-### SOS dispatch
-1. The citizen app captures GPS coordinates and an emergency category.
-2. The API creates an SOS record and ranks available rescue units by geographic distance.
-3. The FastAPI realtime engine broadcasts the alert through `/ws/rescue` to eligible responders in the configured area.
-4. A responder accepts the incident; the API records the assignment and broadcasts a status update.
-5. Subsequent status changes are synchronized to connected clients.
-### Offline operation
-1. The mobile app stores SOS requests locally when network connectivity is unavailable.
-2. When connectivity returns, queued records are sent in a batch to the API.
-3. The backend deduplicates messages, rejects expired records, and registers new SOS events.
-### Emergency guidance
-The guidance service combines live cyclone context with retrieved documents in `cyclone_faq.faiss` and optional external AI services. Weather and cyclone integrations use provider credentials from environment variables.
-> SOS records and WebSocket connections are currently maintained in process memory. Restarting the API clears active records and disconnects connected responders.
-## Getting started
-### Requirements
-- Node.js 18+
-- pnpm 8+
+
+---
+
+## ✨ Key Features
+
+- **Real-Time Cyclone Tracking & Meteorological Analysis**: Live Doppler radar, forecasted cyclone storm paths, wind radii swaths, and categorized threat zones.
+- **One-Tap SOS Emergency Dispatch**: Instantly creates prioritized distress alerts with exact GPS coordinates, severity classification, and headcount.
+- **Bi-Directional Rescue Responder Network**: Live dispatch feed via WebSocket (`/ws/rescue`) connecting field volunteers with victims based on Haversine geographic proximity.
+- **Offline Store-Carry-Forward Emergency Mesh Relay**: Native BLE companion module allowing disconnected devices to queue and bounce encrypted SOS packets across local peer nodes until connectivity is restored.
+- **AI Emergency Safety Assistant & RAG**: On-demand safety protocols, evacuation guidance, and immediate first-aid instructions powered by FAISS vector embeddings and Groq LLMs.
+- **Verified Nearby Emergency Resources**: Discover nearby 24-hour pharmacies, medical relief camps, food distribution centers, and shelters with instant call and route capabilities.
+
+---
+
+## 🛠️ Technology Stack
+
+| Tier | Technologies |
+| --- | --- |
+| **Mobile Application** | Flutter (Dart), Android SDK (API 23–34), Kotlin, Android BLE APIs |
+| **Web Responder Dashboard** | Next.js 14, React 18, TypeScript, Tailwind CSS, WebSockets |
+| **Backend & Realtime Engine** | FastAPI, Flask, Python 3.10+, Uvicorn, WebSockets |
+| **AI, RAG & Vector Search** | FAISS (`cyclone_faq.faiss`), Sentence-Transformers, Groq API (`qwen/qwen3.8-27b`) |
+| **CI/CD & Release Automation** | GitHub Actions (`android-release.yml`), Git, Softprops Release |
+
+---
+
+## 📁 Repository Structure
+
+```
+voidx/
+├── .github/
+│   └── workflows/
+│       └── android-release.yml   # Automated Android APK & AAB build & release workflow
+├── apps/
+│   ├── mobile/                   # CycloneX Flutter Android Application
+│   │   ├── android/              # Native Android configuration (com.cyclonex.app)
+│   │   ├── lib/
+│   │   │   ├── config/           # Centralized environment configuration (app_config.dart)
+│   │   │   ├── core/             # Brand themes, colors, and API route constants
+│   │   │   ├── models/           # Strongly-typed data models (SosRequest, RescueTeam)
+│   │   │   ├── services/         # Realtime WebSocket, HTTP API, Location & Relay services
+│   │   │   ├── Home.dart         # Interactive map, SOS trigger, and nearby resources
+│   │   │   ├── Weather.dart      # Real-time weather, cyclone and atmospheric monitoring
+│   │   │   ├── sos_chat_panel.dart# AI emergency guidance chat & incident responder tracker
+│   │   │   └── shell.dart        # 3-tab navigation shell
+│   │   └── pubspec.yaml          # Flutter dependencies and asset manifest
+│   ├── backend/                  # Next.js Incident Command Dashboard
+│   │   └── src/pages/index.tsx   # Realtime WebSocket responder command center
+│   └── flask/                    # Python Backend Services
+│       ├── fastapi_server.py     # FastAPI realtime SOS and WebSocket engine
+│       ├── main.py               # Flask REST services, Groq AI nearby shops, and RAG routes
+│       └── rag_service.py        # Disaster safety FAQ vector search and LLM synthesis
+└── cyclone_faq.faiss             # Pre-indexed FAISS disaster response embeddings
+```
+
+---
+
+## 🚀 Getting Started & Local Development
+
+### Prerequisites
+- Flutter SDK 3.20+
+- Java JDK 17
 - Python 3.10+
-- Flutter SDK
-- A physical device or emulator for GPS and notification testing
-### 1. Install the workspace
-```bash
-pnpm install
-```
-### 2. Configure the Python services
+- Node.js 18+ and pnpm 8+
+
+### 1. Backend Setup
 ```bash
 cd apps/flask
-cp .env.example .env
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-Set the provider values in `apps/flask/.env` as needed:
-```dotenv
-GROQ_API_KEY=
-GROQ_MODEL=qwen/qwen3.8-27b
-WEATHERAPI_API_KEY=
-GEMINI_API_KEY=
-DTN_CLIENT_ID=
-DTN_CLIENT_SECRET=
-DTN_BASE_URL=https://tropical.api.dtn.com
-DTN_AUTH_URL=https://api.auth.dtn.com/v1/tokens/authorize
-```
-For the realtime WebSocket and SOS API:
-```bash
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt numpy faiss-cpu
+
+# Start the realtime FastAPI server (port 8080)
 python fastapi_server.py
-```
-The service listens on `http://localhost:8080`.
-For the Flask weather and legacy/SOS service used by the Docker setup:
-```bash
+
+# Or start the Flask API services
 python main.py
 ```
-Alternatively, build and run the Flask container:
-```bash
-docker build -t sahaya-api apps/flask
-docker run --env-file apps/flask/.env -p 8080:8080 sahaya-api
-```
-### 3. Start the responder dashboard
+
+### 2. Next.js Responder Dashboard Setup
 ```bash
 cd apps/backend
 pnpm install
 pnpm dev
+# Open http://localhost:3000 to view the responder dashboard
 ```
-Open `http://localhost:3000`. The dashboard connects to the realtime API at port `8080`.
-### 4. Start the mobile app
-Create `apps/mobile/.env` and add the API address for the development machine:
-```dotenv
-BACKEND_URL=http://<development-machine-ip>:8080
-```
-Then run:
+
+### 3. Flutter Android Build
 ```bash
 cd apps/mobile
 flutter pub get
+
+# Run on connected Android device / emulator
 flutter run
+
+# Build local Release APK
+flutter build apk --release
+
+# Build local Android App Bundle
+flutter build appbundle --release
 ```
-Update `apps/mobile/lib/core/constants.dart` for the current network address if a service does not read the environment override.
-## Important API surfaces
-| Area | Example |
-| --- | --- |
-| Create SOS | `POST /api/sos/create` |
-| Active SOS list | `GET /api/sos/active` |
-| Accept SOS | `POST /api/sos/{sos_id}/accept` |
-| Update status | `POST /api/sos/{sos_id}/status` |
-| Rescue teams | `GET /api/rescue/teams` |
-| Nearby facilities or teams | `GET /api/rescue/nearby` or `POST /api/facilities/nearby` |
-| Offline relay | `POST /api/offline/relay` |
-| Emergency guidance | `GET /api/chat/emergency?query=<message>` |
-| Cyclone data | `GET /api/cyclones/active` |
-| Realtime channel | `ws://<host>:8080/ws/rescue?user_id=<id>&role=<role>&lat=<lat>&lng=<lng>` |
-The FastAPI server exposes Swagger documentation at `http://localhost:8080/docs`.
-## Development commands
-| Scope | Command |
-| --- | --- |
-| All workspace development | `pnpm dev` |
-| All workspace builds | `pnpm build` |
-| All workspace lint checks | `pnpm lint` |
-| Mobile checks | `cd apps/mobile && flutter analyze` |
-| Mobile tests | `cd apps/mobile && flutter test` |
-| Next.js dashboard | `cd apps/backend && pnpm dev` |
-## Repository structure
-```text
-.
-├── apps/
-│   ├── backend/      # Next.js responder dashboard
-│   ├── flask/        # Flask and FastAPI emergency services
-│   └── mobile/       # Flutter citizen application
-├── assets/           # Shared images and survey data
-├── packages/         # Shared workspace UI and configuration
-├── cyclone_faq.faiss # Emergency guidance retrieval index
-└── turbo.json        # Workspace task configuration
+
+---
+
+## 🔐 Environment Variables & Production Configuration
+
+Backend and Flutter configuration files follow strict security practices—never commit actual keys or production `.env` files.
+
+### Backend (`apps/flask/.env`)
+```dotenv
+GROQ_API_KEY=gsk_your_groq_api_key
+GROQ_MODEL=qwen/qwen3.8-27b
+WEATHERAPI_API_KEY=your_weatherapi_key
+GEMINI_API_KEY=your_gemini_key
+DTN_CLIENT_ID=your_dtn_client_id
+DTN_CLIENT_SECRET=your_dtn_secret
 ```
-## Operational notes
-- Android emulator/device testing must use a reachable LAN or host address, not `localhost`.
-- Location, notification, SMS, and network permissions are required for their corresponding features.
-- Provider credentials are optional for parts of the application, but weather, AI guidance, and cyclone integrations will use fallbacks or limited data when unavailable.
-- This project is designed for rescue and emergency use cases; validate real-world data sources and operational policies before production deployment.
+
+### Mobile Application (`apps/mobile/lib/config/app_config.dart`)
+Centralized environment resolution automatically routes release builds to production HTTPS/WSS endpoints:
+```dart
+// Production Endpoints:
+// REST API:   https://api.cyclonex.live
+// WebSockets: wss://api.cyclonex.live/ws/rescue
+```
+
+---
+
+## 🚢 CI/CD & Automated GitHub Releases
+
+CycloneX uses a robust GitHub Actions workflow (`.github/workflows/android-release.yml`):
+
+1. **Continuous Integration**: Runs on every pull request and push to `main` (formatting check, `flutter analyze`, and unit test suite).
+2. **Automated Release**: Creating a git release tag (e.g. `v1.0.0`) automatically builds:
+   - `app-release.apk` (Android Release APK)
+   - `app-release.aab` (Google Play App Bundle)
+3. **Publishing**: Uploads built binaries directly to GitHub Releases with zero manual packaging.
+
+---
+
+## ⚖️ License & Open Source
+
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.

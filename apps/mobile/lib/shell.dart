@@ -1,4 +1,4 @@
-// shell.dart — 5-tab navigation shell
+// shell.dart — 5-tab navigation shell for CycloneX
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'core/theme.dart';
@@ -6,15 +6,14 @@ import 'services/websocket_service.dart';
 import 'services/user_service.dart';
 import 'services/location_service.dart';
 import 'services/offline_sos_service.dart';
-import 'screens/monitoring_screen.dart';
-import 'screens/sos_screen.dart';
-import 'screens/rescue_network_screen.dart';
-import 'screens/ai_assistant_screen.dart';
-import 'screens/profile_screen.dart';
-import 'widgets/sos_alert_overlay.dart';
+import 'Home.dart';
+import 'Weather.dart';
+import 'sos_chat_panel.dart';
+import 'config/app_config.dart';
 
 class AppShell extends StatefulWidget {
-  const AppShell({super.key});
+  const AppShell({Key? key}) : super(key: key);
+
   @override
   State<AppShell> createState() => _AppShellState();
 }
@@ -24,14 +23,6 @@ class _AppShellState extends State<AppShell> {
   StreamSubscription? _sosSub;
   StreamSubscription? _statusSub;
   bool _wsConnected = false;
-
-  final _pages = const [
-    MonitoringScreen(),
-    SosScreen(),
-    RescueNetworkScreen(),
-    AiAssistantScreen(),
-    ProfileScreen(),
-  ];
 
   @override
   void initState() {
@@ -50,9 +41,9 @@ class _AppShellState extends State<AppShell> {
 
     WebSocketService.instance.connect(
       userId: UserService.instance.userId,
-      role:   UserService.instance.userRole,
-      lat:    UserService.instance.lat,
-      lng:    UserService.instance.lng,
+      role: UserService.instance.userRole,
+      lat: UserService.instance.lat,
+      lng: UserService.instance.lng,
     );
 
     WebSocketService.instance.connectionState.listen((connected) {
@@ -71,19 +62,47 @@ class _AppShellState extends State<AppShell> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => SosAlertOverlay(
-        sosData: sos,
-        onAccept: () {
-          Navigator.of(context).pop();
-          setState(() => _selectedIndex = 2); // go to Rescue Network tab
-        },
-        onDismiss: () => Navigator.of(context).pop(),
+      builder: (_) => AlertDialog(
+        backgroundColor: AppTheme.card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: const [
+            Icon(Icons.warning_amber_rounded, color: AppTheme.danger),
+            SizedBox(width: 8),
+            Text('CRITICAL SOS ALERT', style: TextStyle(color: AppTheme.danger, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Category: ${sos['category'] ?? 'Emergency'}', style: const TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            Text('Details: ${sos['description'] ?? 'Immediate assistance needed'}'),
+            const SizedBox(height: 8),
+            Text('Location: Lat ${sos['lat'] ?? 0}, Lng ${sos['lng'] ?? 0}'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Dismiss', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary),
+            onPressed: () {
+              Navigator.of(context).pop();
+              setState(() => _selectedIndex = 0); // View map
+            },
+            child: const Text('View on Map', style: TextStyle(color: Colors.black)),
+          ),
+        ],
       ),
     );
   }
 
   void _handleStatusUpdate(Map<String, dynamic> data) {
-    // Bubble to rescue network screen via stream — no action needed here
+    debugPrint("Status update received: $data");
   }
 
   @override
@@ -94,10 +113,29 @@ class _AppShellState extends State<AppShell> {
     super.dispose();
   }
 
+  Widget _buildBody() {
+    switch (_selectedIndex) {
+      case 0:
+        return Home();
+      case 1:
+        return WeatherScreen();
+      case 2:
+        return SOSChatPanel(
+          currentLat: UserService.instance.lat,
+          currentLng: UserService.instance.lng,
+          backendUrl: AppConfig.baseUrl,
+          onClose: () => setState(() => _selectedIndex = 0),
+        );
+      default:
+        return Home();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(index: _selectedIndex, children: _pages),
+      backgroundColor: Colors.transparent,
+      body: _buildBody(),
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -115,31 +153,22 @@ class _AppShellState extends State<AppShell> {
           NavigationBar(
             selectedIndex: _selectedIndex,
             onDestinationSelected: (i) => setState(() => _selectedIndex = i),
+            backgroundColor: Colors.white,
             destinations: const [
               NavigationDestination(
-                icon: Icon(Icons.radar_outlined),
-                selectedIcon: Icon(Icons.radar),
-                label: 'Monitoring',
+                icon: Icon(Icons.home_outlined),
+                selectedIcon: Icon(Icons.home),
+                label: 'Home',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.cloud_outlined),
+                selectedIcon: Icon(Icons.cloud),
+                label: 'Weather',
               ),
               NavigationDestination(
                 icon: Icon(Icons.emergency_outlined),
                 selectedIcon: Icon(Icons.emergency),
-                label: 'SOS',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.people_outline),
-                selectedIcon: Icon(Icons.people),
-                label: 'Rescue',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.smart_toy_outlined),
-                selectedIcon: Icon(Icons.smart_toy),
-                label: 'AI Assistant',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.person_outline),
-                selectedIcon: Icon(Icons.person),
-                label: 'Profile',
+                label: 'SOS Chat',
               ),
             ],
           ),

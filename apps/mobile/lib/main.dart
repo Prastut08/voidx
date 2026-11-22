@@ -5,41 +5,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'getPhoneNumber.dart';
 import 'getPermissions.dart';
-import 'Home.dart';
-import 'Weather.dart';
-
-class CustomNavigationBar extends StatelessWidget {
-  final int selectedIndex;
-  final ValueChanged<int> onItemTapped;
-
-  CustomNavigationBar({
-    Key? key,
-    required this.selectedIndex,
-    required this.onItemTapped,
-  }) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return NavigationBar(
-      selectedIndex: selectedIndex,
-      onDestinationSelected: onItemTapped,
-      backgroundColor: Colors.white,
-      destinations: [
-        NavigationDestination(
-          icon: Icon(Icons.home_outlined),
-          selectedIcon: Icon(Icons.home),
-          label: 'Home',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.cloud_outlined),
-          selectedIcon: Icon(Icons.cloud),
-          label: 'Weather',
-        ),
-        //<------------------ADD MORE OPTIONS AS NEEDED----------------->
-      ],
-    );
-  }
-}
+import 'shell.dart';
+import 'core/theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -68,8 +35,6 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  int _selectedIndex = 0;
-
   Widget _buildBody() {
     if (widget.phoneNumber == null) {
       return GetPhoneNumber();
@@ -77,32 +42,19 @@ class _MyAppState extends State<MyApp> {
     if (!widget.permissionsGranted) {
       return GetPermissions();
     }
-    return _selectedIndex == 0 ? Home() : WeatherScreen();
+    return const AppShell();
   }
 
   @override
   Widget build(BuildContext context) {
-    final bool isSetupComplete =
-        widget.phoneNumber != null && widget.permissionsGranted;
-
     return MaterialApp(
-      title: 'Sahaya',
+      title: 'CycloneX',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        scaffoldBackgroundColor: Colors.transparent,
-        canvasColor: Colors.transparent,
-      ),
+      theme: AppTheme.dark,
       home: Scaffold(
         backgroundColor: Colors.transparent,
         body: _buildBody(),
       ),
     );
-  }
-
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
   }
 }

@@ -29,7 +29,7 @@ class AppTheme {
       bodyMedium: const TextStyle(color: textSecondary),
       titleLarge: TextStyle(color: textPrimary, fontWeight: FontWeight.w700),
     ),
-    cardTheme: CardTheme(
+    cardTheme: CardThemeData(
       color: card,
       elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -48,14 +48,14 @@ class AppTheme {
     navigationBarTheme: NavigationBarThemeData(
       backgroundColor: card,
       indicatorColor: primary.withOpacity(0.15),
-      iconTheme: WidgetStateProperty.resolveWith((states) {
-        if (states.contains(WidgetState.selected)) {
+      iconTheme: MaterialStateProperty.resolveWith((states) {
+        if (states.contains(MaterialState.selected)) {
           return const IconThemeData(color: primary, size: 24);
         }
         return const IconThemeData(color: textSecondary, size: 22);
       }),
-      labelTextStyle: WidgetStateProperty.resolveWith((states) {
-        if (states.contains(WidgetState.selected)) {
+      labelTextStyle: MaterialStateProperty.resolveWith((states) {
+        if (states.contains(MaterialState.selected)) {
           return const TextStyle(color: primary, fontSize: 11, fontWeight: FontWeight.w600);
         }
         return const TextStyle(color: textSecondary, fontSize: 11);

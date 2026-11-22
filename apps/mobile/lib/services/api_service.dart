@@ -1,97 +1,134 @@
 // services/api_service.dart
-import 'package:dio/dio.dart';
-import '../core/constants.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import '../config/app_config.dart';
 
 class ApiService {
   static final ApiService instance = ApiService._();
-  late final Dio _dio;
+  ApiService._();
 
-  ApiService._() {
-    _dio = Dio(BaseOptions(
-      baseUrl: AppConstants.backendBase,
-      connectTimeout: const Duration(seconds: 8),
-      receiveTimeout: const Duration(seconds: 12),
-      headers: {'Content-Type': 'application/json'},
-    ));
-    _dio.interceptors.add(LogInterceptor(responseBody: false, requestBody: false));
-  }
+  String get _baseUrl => AppConfig.baseUrl;
+
+  Map<String, String> get _headers => {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      };
 
   // ── SOS ──────────────────────────────────────────────────
   Future<Map<String, dynamic>> createSos(Map<String, dynamic> payload) async {
-    final r = await _dio.post(AppConstants.apiSosCreate, data: payload);
-    return r.data as Map<String, dynamic>;
+    final res = await http
+        .post(
+          Uri.parse('$_baseUrl${AppConfig.apiSosCreate}'),
+          headers: _headers,
+          body: jsonEncode(payload),
+        )
+        .timeout(const Duration(seconds: 10));
+    return jsonDecode(res.body) as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> getSosList() async {
-    final r = await _dio.get(AppConstants.apiSosList);
-    return r.data as Map<String, dynamic>;
+    final res = await http
+        .get(Uri.parse('$_baseUrl${AppConfig.apiSosList}'), headers: _headers)
+        .timeout(const Duration(seconds: 10));
+    return jsonDecode(res.body) as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> acceptSos(
       String sosId, String responderId, String responderName) async {
-    final url = '/api/sos/$sosId/accept';
-    final r = await _dio.post(url, data: {
-      'responder_id': responderId,
-      'responder_name': responderName,
-    });
-    return r.data as Map<String, dynamic>;
+    final url = '$_baseUrl/api/sos/$sosId/accept';
+    final res = await http
+        .post(
+          Uri.parse(url),
+          headers: _headers,
+          body: jsonEncode({
+            'responder_id': responderId,
+            'responder_name': responderName,
+          }),
+        )
+        .timeout(const Duration(seconds: 10));
+    return jsonDecode(res.body) as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> updateSosStatus(
       String sosId, String status, String responderId,
       {String? note}) async {
-    final url = '/api/sos/$sosId/status';
-    final r = await _dio.post(url, data: {
-      'status': status,
-      'responder_id': responderId,
-      if (note != null) 'note': note,
-    });
-    return r.data as Map<String, dynamic>;
+    final url = '$_baseUrl/api/sos/$sosId/status';
+    final res = await http
+        .post(
+          Uri.parse(url),
+          headers: _headers,
+          body: jsonEncode({
+            'status': status,
+            'responder_id': responderId,
+            if (note != null) 'note': note,
+          }),
+        )
+        .timeout(const Duration(seconds: 10));
+    return jsonDecode(res.body) as Map<String, dynamic>;
   }
 
   // ── Rescue Teams ─────────────────────────────────────────
   Future<Map<String, dynamic>> getRescueTeams() async {
-    final r = await _dio.get(AppConstants.apiRescueTeams);
-    return r.data as Map<String, dynamic>;
+    final res = await http
+        .get(Uri.parse('$_baseUrl${AppConfig.apiRescueTeams}'), headers: _headers)
+        .timeout(const Duration(seconds: 10));
+    return jsonDecode(res.body) as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> getNearbyTeams(
-      double lat, double lng, String? category, {int limit = 5}) async {
-    final r = await _dio.get(AppConstants.apiRescueNearby, queryParameters: {
-      'lat': lat,
-      'lng': lng,
-      if (category != null) 'category': category,
-      'limit': limit,
-    });
-    return r.data as Map<String, dynamic>;
+      double lat, double lng, String? category,
+      {int limit = 5}) async {
+    final uri = Uri.parse('$_baseUrl${AppConfig.apiRescueNearby}').replace(
+      queryParameters: {
+        'lat': lat.toString(),
+        'lng': lng.toString(),
+        if (category != null) 'category': category,
+        'limit': limit.toString(),
+      },
+    );
+    final res = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 10));
+    return jsonDecode(res.body) as Map<String, dynamic>;
   }
 
   // ── Chat / RAG ───────────────────────────────────────────
   Future<Map<String, dynamic>> queryChatEmergency(String query,
       {String? category}) async {
-    final r = await _dio.get(AppConstants.apiChatEmergency, queryParameters: {
-      'query': query,
-      if (category != null) 'category': category,
-    });
-    return r.data as Map<String, dynamic>;
+    final uri = Uri.parse('$_baseUrl${AppConfig.apiChatEmergency}').replace(
+      queryParameters: {
+        'query': query,
+        if (category != null) 'category': category,
+      },
+    );
+    final res = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 12));
+    return jsonDecode(res.body) as Map<String, dynamic>;
   }
 
   // ── Cyclones ─────────────────────────────────────────────
   Future<Map<String, dynamic>> getActiveCyclones() async {
-    final r = await _dio.get(AppConstants.apiCyclonesActive);
-    return r.data as Map<String, dynamic>;
+    final res = await http
+        .get(Uri.parse('$_baseUrl${AppConfig.apiCyclonesActive}'), headers: _headers)
+        .timeout(const Duration(seconds: 10));
+    return jsonDecode(res.body) as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> getCyclonesHealth() async {
-    final r = await _dio.get(AppConstants.apiCyclonesHealth);
-    return r.data as Map<String, dynamic>;
+    final res = await http
+        .get(Uri.parse('$_baseUrl${AppConfig.apiCyclonesHealth}'), headers: _headers)
+        .timeout(const Duration(seconds: 10));
+    return jsonDecode(res.body) as Map<String, dynamic>;
   }
 
   // ── Offline Sync ─────────────────────────────────────────
   Future<Map<String, dynamic>> syncOfflineSos(
       List<Map<String, dynamic>> messages) async {
-    final r = await _dio
-        .post(AppConstants.apiOfflineSync, data: {'messages': messages});
-    return r.data as Map<String, dynamic>;
+    final res = await http
+        .post(
+          Uri.parse('$_baseUrl${AppConfig.apiOfflineSync}'),
+          headers: _headers,
+          body: jsonEncode({'messages': messages}),
+        )
+        .timeout(const Duration(seconds: 10));
+    return jsonDecode(res.body) as Map<String, dynamic>;
   }
 }
+

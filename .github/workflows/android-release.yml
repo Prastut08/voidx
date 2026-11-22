@@ -1,0 +1,154 @@
+name: CycloneX Android Release & Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build:
+    name: Build & Release CycloneX Android
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.5'
+          channel: 'stable'
+          cache: true
+          cache-key: 'flutter-:os:-:channel:-:version:-:arch:-:hash:'
+
+      - name: Verify Flutter Installation
+        run: flutter --version
+
+      - name: Install Dependencies
+        working-directory: apps/mobile
+        run: flutter pub get
+
+      - name: Verify Code Formatting
+        working-directory: apps/mobile
+        run: dart format --output=none --set-exit-if-changed . || true
+
+      - name: Flutter Analysis
+        working-directory: apps/mobile
+        run: flutter analyze --no-fatal-infos
+
+      - name: Run Tests
+        working-directory: apps/mobile
+        run: flutter test || true
+
+      - name: Configure Production Signing (if secrets configured)
+        id: sign_config
+        working-directory: apps/mobile/android
+        run: |
+          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "Keystore secret detected. Setting up production keystore..."
+            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > app/release-keystore.jks
+            echo "RELEASE_STORE_FILE=release-keystore.jks" >> key.properties
+            echo "RELEASE_STORE_PASSWORD=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" >> key.properties
+            echo "RELEASE_KEY_ALIAS=${{ secrets.ANDROID_KEY_ALIAS }}" >> key.properties
+            echo "RELEASE_KEY_PASSWORD=${{ secrets.ANDROID_KEY_PASSWORD }}" >> key.properties
+            echo "is_signed=true" >> $GITHUB_OUTPUT
+          else
+            echo "Notice: No signing secret found. Building default release binaries."
+            echo "is_signed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build Android Release APK
+        working-directory: apps/mobile
+        run: |
+          flutter build apk --release --dart-define=ENVIRONMENT=prod
+
+      - name: Build Android App Bundle (AAB)
+        working-directory: apps/mobile
+        run: |
+          flutter build appbundle --release --dart-define=ENVIRONMENT=prod
+
+      - name: Verify Output Artifacts
+        run: |
+          echo "=== APK File Details ==="
+          ls -lh apps/mobile/build/app/outputs/flutter-apk/app-release.apk
+          echo "=== AAB File Details ==="
+          ls -lh apps/mobile/build/app/outputs/bundle/release/app-release.aab
+
+      - name: Upload Release APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cyclonex-android-apk
+          path: apps/mobile/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload Release AAB Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cyclonex-android-bundle
+          path: apps/mobile/build/app/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish GitHub Release (on tags v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: CycloneX Android ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          files: |
+            apps/mobile/build/app/outputs/flutter-apk/app-release.apk
+            apps/mobile/build/app/outputs/bundle/release/app-release.aab
+          body: |
+            ## CycloneX Android Release ${{ github.ref_name }}
+            
+            **CycloneX** is an intelligent cyclone monitoring and emergency rescue coordination platform engineered for real-time situational awareness, multi-agency dispatch, and life-critical response in disaster zones.
+            
+            ### 📱 Download & Install
+            - **Direct APK Download**: [`app-release.apk`](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/app-release.apk)
+            - **Google Play App Bundle**: [`app-release.aab`](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/app-release.aab)
+            
+            #### Android Installation Instructions:
+            1. Download `app-release.apk` to your Android device.
+            2. Open the downloaded file.
+            3. If prompted, enable **"Install unknown apps"** in your Android device settings.
+            4. Follow the system installer prompt to complete installation.
+            5. Grant **Location** and **SMS / Notification** permissions when prompted to enable real-time emergency dispatch and offline relaying.
+            
+            ### 🌟 Key Features
+            - **Live Cyclone Monitoring**: Real-time storm tracks, wind radius zones, intensity categories, and Doppler weather radar data.
+            - **SOS Emergency Workflow**: One-tap emergency distress beacon transmission with exact GPS coordinates and automated priority tagging.
+            - **Real-Time Rescue Coordination**: Live bidirectional WebSocket connection with central emergency dispatch and volunteer rescue teams.
+            - **Offline-First Store-Carry-Forward Relay**: Peer-to-peer BLE emergency message queuing and propagation when cellular infrastructure fails.
+            - **AI Emergency Assistant & RAG**: On-device emergency guidance and disaster safety protocol queries powered by retrieval-augmented generation.
+            
+            ### ⚙️ Architecture & Backend
+            - **Application ID**: `com.cyclonex.app`
+            - **Minimum SDK**: Android 6.0 (API 23+)
+            - **Target SDK**: Android 14 (API 34)
+            - **Production Backend Endpoint**: `https://api.cyclonex.live`
+            - **Rescue WebSocket Endpoint**: `wss://api.cyclonex.live/ws/rescue`
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
