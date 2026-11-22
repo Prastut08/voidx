@@ -139,6 +139,7 @@ class _HomeState extends State<Home> {
     {"type": "Food", "icon": Icons.restaurant},
   ];
 
+  bool _isSpeedDialOpen = false;
   String selectedFilter = '';
 
   @override
@@ -1084,56 +1085,56 @@ class _HomeState extends State<Home> {
   }
 
   Widget _buildTopFloatingBar() {
+    final topPadding = MediaQuery.of(context).padding.top;
     return Container(
-      height: 60,
-      padding: EdgeInsets.symmetric(horizontal: 12),
-      margin: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 8),
-      child: Row(
-        children: [
-          // Hamburger menu button
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(color: Colors.black26, blurRadius: 6, spreadRadius: 1)
-              ],
-            ),
-            child: IconButton(
-              icon: Icon(Icons.menu, color: Colors.black87),
-              tooltip: 'Nearby Assistance Menu',
-              onPressed: () => _showAssistanceDrawer(),
-            ),
+      height: 48,
+      margin: EdgeInsets.only(top: topPadding > 0 ? topPadding + 6 : 14),
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 3),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(30),
+            boxShadow: const [
+              BoxShadow(color: Colors.black26, blurRadius: 8, spreadRadius: 1)
+            ],
           ),
-          SizedBox(width: 10),
-          // Horizontal quick heading chips
-          Expanded(
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: filtersNeedHelp.map((f) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 3.0, vertical: 8.0),
-                  child: ActionChip(
-                    avatar: Icon(f['icon'], size: 16, color: Colors.redAccent),
-                    label: Text(
-                      f['type'],
-                      style: GoogleFonts.getFont('Lexend', fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black87),
-                    ),
-                    backgroundColor: Colors.white.withOpacity(0.95),
-                    elevation: 3,
-                    shadowColor: Colors.black26,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                    onPressed: () {
-                      _showAssistanceDrawer(initialHeading: f['type']);
-                    },
-                  ),
-                );
-              }).toList(),
-            ),
+          child: CupertinoSlidingSegmentedControl<int>(
+            children: {
+              0: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                child: Text(
+                  'Need Help',
+                  style: GoogleFonts.getFont('Lexend',
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                      color: isHelping ? Colors.grey : Colors.redAccent),
+                ),
+              ),
+              1: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                child: Text(
+                  'Give Help',
+                  style: GoogleFonts.getFont('Lexend',
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                      color: isHelping ? Colors.blue : Colors.grey),
+                ),
+              ),
+            },
+            groupValue: isHelping ? 1 : 0,
+            onValueChanged: (int? value) {
+              setState(() {
+                isHelping = value == 1;
+                _isSpeedDialOpen = false;
+                if (isHelping) _activeGroqHeading = '';
+              });
+            },
+            backgroundColor: const Color(0xFFEEEEEE),
+            thumbColor: Colors.white,
           ),
-        ],
+        ),
       ),
     );
   }
@@ -1231,20 +1232,145 @@ class _HomeState extends State<Home> {
     );
   }
 
-  Widget actionBtn(isHelping, selectedFilter) {
+  Widget _buildAssistanceSpeedDial() {
+    final activeChips = isHelping ? filtersGiveHelp : filtersNeedHelp;
+
+    return Positioned(
+      right: 16.0,
+      bottom: 240.0,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_isSpeedDialOpen) ...[
+            Container(
+              constraints: const BoxConstraints(maxHeight: 280, maxWidth: 220),
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 10,
+                    spreadRadius: 2,
+                  ),
+                ],
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    // Option to open full drawer
+                    InkWell(
+                      onTap: () {
+                        setState(() {
+                          _isSpeedDialOpen = false;
+                        });
+                        _showAssistanceDrawer();
+                      },
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        margin: const EdgeInsets.only(bottom: 6),
+                        decoration: BoxDecoration(
+                          color: (isHelping ? Colors.blue : Colors.redAccent).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.dashboard_customize, size: 16, color: isHelping ? Colors.blue : Colors.redAccent),
+                            const SizedBox(width: 8),
+                            Text(
+                              'View All Nearby',
+                              style: GoogleFonts.getFont(
+                                'Lexend',
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: isHelping ? Colors.blue : Colors.redAccent,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const Divider(height: 8),
+                    // Heading chips
+                    ...activeChips.map((f) {
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 3.0),
+                        child: InkWell(
+                          onTap: () {
+                            setState(() {
+                              _isSpeedDialOpen = false;
+                            });
+                            _showAssistanceDrawer(initialHeading: f['type']);
+                          },
+                          borderRadius: BorderRadius.circular(10),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(f['icon'], size: 16, color: isHelping ? Colors.blue : Colors.redAccent),
+                                const SizedBox(width: 8),
+                                Text(
+                                  f['type'],
+                                  style: GoogleFonts.getFont(
+                                    'Lexend',
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ],
+                ),
+              ),
+            ),
+          ],
+          // Main trigger button for the assistance options
+          FloatingActionButton(
+            mini: false,
+            backgroundColor: _isSpeedDialOpen
+                ? Colors.black87
+                : Colors.white,
+            foregroundColor: _isSpeedDialOpen
+                ? Colors.white
+                : (isHelping ? Colors.blue : Colors.redAccent),
+            tooltip: 'Nearby Assistance Options',
+            onPressed: () {
+              setState(() {
+                _isSpeedDialOpen = !_isSpeedDialOpen;
+              });
+            },
+            child: Icon(_isSpeedDialOpen ? Icons.close : Icons.store_mall_directory),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget actionBtn(isHelping) {
     return Positioned(
       right: 16.0,
       bottom: 45.0,
       child: buildFloatingActionButton(
         isHelping: isHelping,
-        selectedFilter: selectedFilter,
       ),
     );
   }
 
   Widget buildFloatingActionButton({
     required bool isHelping,
-    required String selectedFilter,
   }) {
     return FloatingActionButton(
       child: Icon(
@@ -1543,7 +1669,8 @@ class _HomeState extends State<Home> {
             ],
           ),
           recenterBtn(),
-          actionBtn(isHelping, selectedFilter),
+          _buildAssistanceSpeedDial(),
+          actionBtn(isHelping),
           SOSButton(
             isHelping: isHelping == true,
             currentLat: currentLat,
