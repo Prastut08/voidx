@@ -7,7 +7,6 @@ import 'package:telephony/telephony.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -27,6 +26,7 @@ class Home extends StatefulWidget {
   @override
   _HomeState createState() => _HomeState();
 }
+
 class SOSButton extends StatelessWidget {
   final bool isHelping;
   final double currentLat;
@@ -99,6 +99,7 @@ class SOSButton extends StatelessWidget {
     }
   }
 }
+
 class _HomeState extends State<Home> {
   double currentLat = 20.5937;
   double currentLng = 78.9629;
@@ -133,6 +134,291 @@ class _HomeState extends State<Home> {
   ];
 
   String selectedFilter = '';
+
+  List<Map<String, dynamic>> _nearbyFacilities = [];
+  bool _isLoadingFacilities = false;
+
+  Future<void> _findNearbyMedicalFacilities() async {
+    if (_isLoadingFacilities) return;
+    setState(() { _isLoadingFacilities = true; });
+
+    try {
+      final url = Uri.parse(_safeBackendUrl() + "/api/facilities/nearby");
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'lat': currentLat,
+          'lng': currentLng,
+          'facility_type': 'hospital',
+          'radius_km': 15.0,
+          'limit': 10,
+        }),
+      ).timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final facilities = data['facilities'] as List? ?? [];
+        setState(() {
+          _nearbyFacilities = List<Map<String, dynamic>>.from(facilities);
+        });
+        _showFacilitiesBottomSheet();
+      } else {
+        _showErrorSnackBar('Failed to find nearby facilities');
+      }
+    } catch (e) {
+      debugPrint('Error finding facilities: $e');
+      _showErrorSnackBar('Error: Could not fetch nearby facilities');
+    } finally {
+      setState(() { _isLoadingFacilities = false; });
+    }
+  }
+
+  void _showFacilitiesBottomSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (BuildContext bc) {
+        return Container(
+          height: MediaQuery.of(context).size.height * 0.7,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            children: [
+              Container(
+                width: 44,
+                height: 5,
+                margin: const EdgeInsets.only(top: 12, bottom: 8),
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                child: Row(
+                  children: [
+                    const Icon(Icons.local_hospital, color: Colors.redAccent, size: 28),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Nearby Medical Facilities',
+                        style: GoogleFonts.getFont('Lexend', fontWeight: FontWeight.bold, fontSize: 20),
+                      ),
+                    ),
+                    Text(
+                      '${_nearbyFacilities.length} found',
+                      style: GoogleFonts.getFont('Lexend', fontSize: 14, color: Colors.grey[600]),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: _nearbyFacilities.isEmpty
+                    ? Center(
+                        child: Text(
+                          'No medical facilities found nearby',
+                          style: GoogleFonts.getFont('Lexend', color: Colors.grey),
+                        ),
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: _nearbyFacilities.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 12),
+                        itemBuilder: (context, index) {
+                          final f = _nearbyFacilities[index];
+                          final name = f['name'] ?? 'Unknown Facility';
+                          final address = f['address'] ?? 'Address unavailable';
+                          final distance = f['distance_km']?.toStringAsFixed(1) ?? 'N/A';
+                          final phone = f['phone'] ?? '';
+                          final type = f['type'] ?? 'hospital';
+                          final is24h = f['is_24h'] == true;
+                          final specialties = f['specialties'] as List? ?? [];
+                          
+                          return Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: const Color(0xFFE2E8F0)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(10),
+                                      decoration: BoxDecoration(
+                                        color: Colors.redAccent.withOpacity(0.12),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(Icons.local_hospital, color: Colors.redAccent, size: 22),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            name,
+                                            style: GoogleFonts.getFont('Lexend', fontWeight: FontWeight.bold, fontSize: 16),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Row(
+                                            children: [
+                                              const Icon(Icons.directions, size: 14, color: Colors.blue),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                '$distance km away',
+                                                style: GoogleFonts.getFont('Lexend', fontSize: 13, color: Colors.blue[700]),
+                                              ),
+                                              if (is24h) ...[
+                                                const SizedBox(width: 12),
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.green.withOpacity(0.15),
+                                                    borderRadius: BorderRadius.circular(4),
+                                                  ),
+                                                  child: Text(
+                                                    '24/7',
+                                                    style: GoogleFonts.getFont('Lexend', fontSize: 11, color: Colors.green[800], fontWeight: FontWeight.bold),
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.place, size: 14, color: Colors.grey),
+                                    const SizedBox(width: 4),
+                                    Expanded(
+                                      child: Text(
+                                        address,
+                                        style: GoogleFonts.getFont('Lexend', fontSize: 13, color: Colors.grey[700]),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                if (phone.isNotEmpty) ...[
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.phone, size: 14, color: Colors.grey),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        phone,
+                                        style: GoogleFonts.getFont('Lexend', fontSize: 13, color: Colors.grey[700]),
+                                      ),
+                                      const Spacer(),
+                                      TextButton.icon(
+                                        onPressed: () => launch('tel:$phone'),
+                                        icon: const Icon(Icons.call, size: 16, color: Colors.blue),
+                                        label: Text('Call', style: GoogleFonts.getFont('Lexend', color: Colors.blue, fontSize: 13)),
+                                        style: TextButton.styleFrom(
+                                          visualDensity: VisualDensity.compact,
+                                          padding: EdgeInsets.zero,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                                if (specialties.isNotEmpty) ...[
+                                  const SizedBox(height: 8),
+                                  Wrap(
+                                    spacing: 6,
+                                    runSpacing: 4,
+                                    children: specialties.map((s) => Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color: Colors.blue.withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Text(
+                                        s.toString(),
+                                        style: GoogleFonts.getFont('Lexend', fontSize: 11, color: Colors.blue[800]),
+                                      ),
+                                    )).toList(),
+                                  ),
+                                ],
+                                const SizedBox(height: 12),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: OutlinedButton.icon(
+                                        onPressed: () => _openMapRoute(
+                                          currentLat, currentLng,
+                                          (f['lat'] as num?)?.toDouble() ?? 0.0,
+                                          (f['lng'] as num?)?.toDouble() ?? 0.0,
+                                        ),
+                                        icon: const Icon(Icons.directions, size: 18),
+                                        label: Text('Navigate', style: GoogleFonts.getFont('Lexend', fontWeight: FontWeight.bold)),
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor: Colors.blue,
+                                          side: const BorderSide(color: Colors.blue),
+                                          padding: const EdgeInsets.symmetric(vertical: 12),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: ElevatedButton.icon(
+                                        onPressed: () => _sendSOSToFacility(f),
+                                        icon: const Icon(Icons.sos, size: 18),
+                                        label: Text('Send SOS', style: GoogleFonts.getFont('Lexend', fontWeight: FontWeight.bold)),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.redAccent,
+                                          foregroundColor: Colors.white,
+                                          padding: const EdgeInsets.symmetric(vertical: 12),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _sendSOSToFacility(Map<String, dynamic> facility) {
+    Navigator.pop(context);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('SOS sent to ${facility['name']} - Emergency team notified'),
+        backgroundColor: Colors.redAccent,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+    // Could also call makePostRequest here with facility info
+  }
+
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.redAccent,
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -181,7 +467,9 @@ class _HomeState extends State<Home> {
       js.context.callMethod('updateWindyLocation', [currentLat, currentLng]);
     } catch (e) {
       debugPrint('Location error: $e');
-      setState(() { locationLoaded = true; });
+      setState(() {
+        locationLoaded = true;
+      });
     }
   }
 
@@ -318,7 +606,9 @@ class _HomeState extends State<Home> {
                   ),
                   SizedBox(height: 22),
                   Text(
-                    locationDetails['type'] == 'victim' ? 'Needs:' : 'Available Assistance:',
+                    locationDetails['type'] == 'victim'
+                        ? 'Needs:'
+                        : 'Available Assistance:',
                     //'Available Assistance:',
                     style: GoogleFonts.getFont(
                       "Lexend",
@@ -392,15 +682,15 @@ class _HomeState extends State<Home> {
     final List<String> messages = [];
     final Telephony telephony = Telephony.instance;
     List<SmsMessage> smsStream = await telephony.getInboxSms(
-		columns: [SmsColumn.ADDRESS, SmsColumn.BODY],
-		filter: SmsFilter.where(SmsColumn.ADDRESS)
-				 .equals("$smsNumber")
-				 .and(SmsColumn.BODY)
-				 .like(""),
-		sortOrder: [OrderBy(SmsColumn.ADDRESS, sort: Sort.ASC),
-			    OrderBy(SmsColumn.BODY)]
-		);
-    
+        columns: [SmsColumn.ADDRESS, SmsColumn.BODY],
+        filter: SmsFilter.where(SmsColumn.ADDRESS)
+            .equals("$smsNumber")
+            .and(SmsColumn.BODY)
+            .like(""),
+        sortOrder: [
+          OrderBy(SmsColumn.ADDRESS, sort: Sort.ASC),
+          OrderBy(SmsColumn.BODY)
+        ]);
 
     await Future.delayed(Duration(minutes: 1));
     smsStream.isEmpty ? print('No messages') : print('Messages found');
@@ -484,9 +774,11 @@ class _HomeState extends State<Home> {
 
   // -----------------------------------------------------------------------------------------------------------------------------------------------
 
-  void makePostRequest(List<String> selectedHelp, bool isHelping, dynamic lat, dynamic lng) async {
+  void makePostRequest(List<String> selectedHelp, bool isHelping, dynamic lat,
+      dynamic lng) async {
     final prefs = await SharedPreferences.getInstance();
-    String phoneNumber = prefs.getString('phoneNumber') ?? 'No phone number set';
+    String phoneNumber =
+        prefs.getString('phoneNumber') ?? 'No phone number set';
 
     String mode = isHelping ? "give" : "need";
     String type = isHelping ? "volunteer" : "victim";
@@ -523,7 +815,6 @@ class _HomeState extends State<Home> {
   void reloadMapMarkers() async {
     await _loadJsonData();
   }
-
 
   void actionButtonClickFn() async {
     try {
@@ -657,7 +948,8 @@ class _HomeState extends State<Home> {
                                   .toList();
                               print('Phone Number: $phoneNumber');
                               print('Selected Help Options: $selectedHelp');
-                              makePostRequest(selectedHelp, isHelping, currentLat, currentLng);
+                              makePostRequest(selectedHelp, isHelping,
+                                  currentLat, currentLng);
                               Navigator.pop(context);
                               reloadMapMarkers();
                             }
@@ -682,9 +974,12 @@ class _HomeState extends State<Home> {
   IconData _getIconForType(String type) {
     final t = type.toLowerCase();
     if (t.contains('hospital')) return FontAwesomeIcons.truckMedical;
-    if (t.contains('relief') || t.contains('camp')) return FontAwesomeIcons.tent;
-    if (t.contains('safe') || t.contains('space') || t.contains('shelter')) return FontAwesomeIcons.home;
-    if (t.contains('supplies') || t.contains('food')) return FontAwesomeIcons.boxOpen;
+    if (t.contains('relief') || t.contains('camp'))
+      return FontAwesomeIcons.tent;
+    if (t.contains('safe') || t.contains('space') || t.contains('shelter'))
+      return FontAwesomeIcons.home;
+    if (t.contains('supplies') || t.contains('food'))
+      return FontAwesomeIcons.boxOpen;
     return FontAwesomeIcons.handsHelping;
   }
 
@@ -702,166 +997,191 @@ class _HomeState extends State<Home> {
             builder: (BuildContext context, StateSetter setModalState) {
               final items = isHelping ? _giveItems : _needItems;
               return Container(
-            height: MediaQuery.of(context).size.height * 0.75,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-              boxShadow: [
-                BoxShadow(color: Colors.black26, blurRadius: 10, spreadRadius: 2)
-              ],
-            ),
-            child: Column(
-              children: [
-                const SizedBox(height: 12),
-                // Drag handle
-                Container(
-                  width: 44,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(3),
-                  ),
+                height: MediaQuery.of(context).size.height * 0.75,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                  boxShadow: [
+                    BoxShadow(
+                        color: Colors.black26, blurRadius: 10, spreadRadius: 2)
+                  ],
                 ),
-                // Need Help / Give Help toggle inside drawer
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
-                  child: Container(
-                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Color(0xFFEEEEEE),
-                      borderRadius: BorderRadius.circular(30),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 12),
+                    // Drag handle
+                    Container(
+                      width: 44,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(3),
+                      ),
                     ),
-                    child: CupertinoSlidingSegmentedControl<int>(
-                      children: {
-                        0: Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          child: Text(
-                            'Need Help',
-                            style: GoogleFonts.getFont('Lexend',
-                                fontWeight: FontWeight.w700,
-                                fontSize: 15,
-                                color: isHelping ? Colors.grey : Colors.redAccent),
-                          ),
+                    // Need Help / Give Help toggle inside drawer
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+                      child: Container(
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Color(0xFFEEEEEE),
+                          borderRadius: BorderRadius.circular(30),
                         ),
-                        1: Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          child: Text(
-                            'Give Help',
-                            style: GoogleFonts.getFont('Lexend',
-                                fontWeight: FontWeight.w700,
-                                fontSize: 15,
-                                color: isHelping ? Colors.blue : Colors.grey),
-                          ),
-                        ),
-                      },
-                      groupValue: isHelping ? 1 : 0,
-                      onValueChanged: (int? value) {
-                        setState(() { isHelping = value == 1; });
-                        setModalState(() {});
-                      },
-                      backgroundColor: Color(0xFFEEEEEE),
-                      thumbColor: Colors.white,
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 10, 20, 4),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        isHelping ? 'Available Requests' : 'Nearby Assistance',
-                        style: GoogleFonts.getFont(
-                          'Lexend',
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18,
-                          color: Colors.black87,
+                        child: CupertinoSlidingSegmentedControl<int>(
+                          children: {
+                            0: Padding(
+                              padding: EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 6),
+                              child: Text(
+                                'Need Help',
+                                style: GoogleFonts.getFont('Lexend',
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 15,
+                                    color: isHelping
+                                        ? Colors.grey
+                                        : Colors.redAccent),
+                              ),
+                            ),
+                            1: Padding(
+                              padding: EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 6),
+                              child: Text(
+                                'Give Help',
+                                style: GoogleFonts.getFont('Lexend',
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 15,
+                                    color:
+                                        isHelping ? Colors.blue : Colors.grey),
+                              ),
+                            ),
+                          },
+                          groupValue: isHelping ? 1 : 0,
+                          onValueChanged: (int? value) {
+                            setState(() {
+                              isHelping = value == 1;
+                            });
+                            setModalState(() {});
+                          },
+                          backgroundColor: Color(0xFFEEEEEE),
+                          thumbColor: Colors.white,
                         ),
                       ),
-                      Text(
-                        '${items.length} locations',
-                        style: GoogleFonts.getFont(
-                          'Lexend',
-                          fontSize: 13,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Divider(height: 1),
-                Expanded(
-                  child: items.isEmpty
-                      ? Center(
-                          child: Text(
-                            'No locations found',
-                            style: GoogleFonts.getFont('Lexend', color: Colors.grey),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 10, 20, 4),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            isHelping
+                                ? 'Available Requests'
+                                : 'Nearby Assistance',
+                            style: GoogleFonts.getFont(
+                              'Lexend',
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                              color: Colors.black87,
+                            ),
                           ),
-                        )
-                      : ListView.separated(
-                          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          itemCount: items.length,
-                          separatorBuilder: (_, __) => SizedBox(height: 8),
-                          itemBuilder: (context, index) {
-                            final item = items[index];
-                            final double itemLat = (item['location']['lat'] as num).toDouble();
-                            final double itemLng = (item['location']['lng'] as num).toDouble();
-                            final dist = Geolocator.distanceBetween(currentLat, currentLng, itemLat, itemLng);
-                            final distStr = dist < 1000
-                                ? '${dist.toStringAsFixed(0)}m'
-                                : '${(dist / 1000).toStringAsFixed(1)}km';
-                            final String type = (item['type'] ?? '').toString().toUpperCase();
-                            return ListTile(
-                              tileColor: Color(0xFFF7F8FA),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
+                          Text(
+                            '${items.length} locations',
+                            style: GoogleFonts.getFont(
+                              'Lexend',
+                              fontSize: 13,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    Expanded(
+                      child: items.isEmpty
+                          ? Center(
+                              child: Text(
+                                'No locations found',
+                                style: GoogleFonts.getFont('Lexend',
+                                    color: Colors.grey),
                               ),
-                              leading: Container(
-                                padding: EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: (isHelping ? Colors.blue : Colors.redAccent).withOpacity(0.12),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  _getIconForType(type),
-                                  color: isHelping ? Colors.blue : Colors.redAccent,
-                                  size: 18,
-                                ),
-                              ),
-                              title: Text(
-                                type,
-                                style: GoogleFonts.getFont(
-                                  'Lexend',
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                ),
-                              ),
-                              subtitle: Row(
-                                children: [
-                                  Icon(Icons.place, size: 13, color: Colors.grey),
-                                  SizedBox(width: 3),
-                                  Text(
-                                    distStr,
-                                    style: GoogleFonts.getFont(
-                                      'Lexend',
-                                      fontSize: 12,
-                                      color: Colors.grey[700],
+                            )
+                          : ListView.separated(
+                              padding: EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 12),
+                              itemCount: items.length,
+                              separatorBuilder: (_, __) => SizedBox(height: 8),
+                              itemBuilder: (context, index) {
+                                final item = items[index];
+                                final double itemLat =
+                                    (item['location']['lat'] as num).toDouble();
+                                final double itemLng =
+                                    (item['location']['lng'] as num).toDouble();
+                                final dist = Geolocator.distanceBetween(
+                                    currentLat, currentLng, itemLat, itemLng);
+                                final distStr = dist < 1000
+                                    ? '${dist.toStringAsFixed(0)}m'
+                                    : '${(dist / 1000).toStringAsFixed(1)}km';
+                                final String type = (item['type'] ?? '')
+                                    .toString()
+                                    .toUpperCase();
+                                return ListTile(
+                                  tileColor: Color(0xFFF7F8FA),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  leading: Container(
+                                    padding: EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: (isHelping
+                                              ? Colors.blue
+                                              : Colors.redAccent)
+                                          .withOpacity(0.12),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Icon(
+                                      _getIconForType(type),
+                                      color: isHelping
+                                          ? Colors.blue
+                                          : Colors.redAccent,
+                                      size: 18,
                                     ),
                                   ),
-                                ],
-                              ),
-                              trailing: Icon(Icons.chevron_right, color: Colors.grey),
-                              onTap: () {
-                                Navigator.pop(context);
-                                _showLocationDetails(context, item);
+                                  title: Text(
+                                    type,
+                                    style: GoogleFonts.getFont(
+                                      'Lexend',
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  subtitle: Row(
+                                    children: [
+                                      Icon(Icons.place,
+                                          size: 13, color: Colors.grey),
+                                      SizedBox(width: 3),
+                                      Text(
+                                        distStr,
+                                        style: GoogleFonts.getFont(
+                                          'Lexend',
+                                          fontSize: 12,
+                                          color: Colors.grey[700],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  trailing: Icon(Icons.chevron_right,
+                                      color: Colors.grey),
+                                  onTap: () {
+                                    Navigator.pop(context);
+                                    _showLocationDetails(context, item);
+                                  },
+                                );
                               },
-                            );
-                          },
-                        ),
+                            ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          );
+              );
             },
           );
         },
@@ -956,6 +1276,9 @@ class _HomeState extends State<Home> {
                 setState(() {
                   selectedFilter = value ? filter['type'] : '';
                 });
+                if (value && filter['type'] == 'Hospital' && !isHelping) {
+                  _findNearbyMedicalFacilities();
+                }
               },
               backgroundColor: Color.fromARGB(255, 227, 227, 227),
               selectedColor: isHelping
@@ -981,14 +1304,36 @@ class _HomeState extends State<Home> {
   Widget recenterBtn() {
     return Positioned(
       right: 20.0,
-      bottom: 90.0,
+      bottom: 120.0,
       child: FloatingActionButton(
         mini: false,
         child: Icon(FontAwesomeIcons.streetView, color: Colors.black),
         backgroundColor: Colors.white,
         onPressed: () {
-          js.context.callMethod('updateWindyLocation', [currentLat, currentLng]);
+          js.context
+              .callMethod('updateWindyLocation', [currentLat, currentLng]);
         },
+      ),
+    );
+  }
+
+  Widget findMedicalBtn() {
+    return Positioned(
+      right: 20.0,
+      bottom: 90.0,
+      child: FloatingActionButton(
+        mini: false,
+        heroTag: 'findMedical',
+        child: _isLoadingFacilities
+            ? const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              )
+            : Icon(FontAwesomeIcons.hospital, color: Colors.white),
+        backgroundColor: Colors.redAccent,
+        onPressed: _findNearbyMedicalFacilities,
+        tooltip: 'Find Nearest Medical',
       ),
     );
   }
@@ -1039,7 +1384,8 @@ class _HomeState extends State<Home> {
             final item = items[index];
             final double itemLat = (item['location']['lat'] as num).toDouble();
             final double itemLng = (item['location']['lng'] as num).toDouble();
-            final dist = Geolocator.distanceBetween(currentLat, currentLng, itemLat, itemLng);
+            final dist = Geolocator.distanceBetween(
+                currentLat, currentLng, itemLat, itemLng);
             final distStr = dist < 1000
                 ? '${dist.toStringAsFixed(0)}m'
                 : '${(dist / 1000).toStringAsFixed(1)}km';
@@ -1099,6 +1445,7 @@ class _HomeState extends State<Home> {
             ],
           ),
           recenterBtn(),
+          findMedicalBtn(),
           actionBtn(isHelping, selectedFilter),
           SOSButton(
             isHelping: isHelping == true,

@@ -1,107 +1,49 @@
+// ============================================================
+// CycloneX Android App — main.dart
+// Entry point: initialises services, routes to shell
+// ============================================================
 import 'package:flutter/material.dart';
-
-import 'package:flutter_config/flutter_config.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:timezone/data/latest.dart' as tz;
 
-import 'getPhoneNumber.dart';
-import 'getPermissions.dart';
-import 'Home.dart';
-import 'Weather.dart';
-
-class CustomNavigationBar extends StatelessWidget {
-  final int selectedIndex;
-  final ValueChanged<int> onItemTapped;
-
-  CustomNavigationBar({
-    Key? key,
-    required this.selectedIndex,
-    required this.onItemTapped,
-  }) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return NavigationBar(
-      selectedIndex: selectedIndex,
-      onDestinationSelected: onItemTapped,
-      backgroundColor: Colors.white,
-      destinations: [
-        NavigationDestination(
-          icon: Icon(Icons.home_outlined),
-          selectedIcon: Icon(Icons.home),
-          label: 'Home',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.cloud_outlined),
-          selectedIcon: Icon(Icons.cloud),
-          label: 'Weather',
-        ),
-        //<------------------ADD MORE OPTIONS AS NEEDED----------------->
-      ],
-    );
-  }
-}
+import 'core/theme.dart';
+import 'core/constants.dart';
+import 'services/notification_service.dart';
+import 'services/connectivity_service.dart';
+import 'shell.dart';
+import 'screens/onboarding_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  try {
-    await FlutterConfig.loadEnvVariables();
-  } catch (e) {
-    debugPrint("FlutterConfig not supported on this platform: $e");
-  }
+  tz.initializeTimeZones();
+
+  SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.light,
+  ));
+
+  await NotificationService.instance.init();
+  await ConnectivityService.instance.init();
+
   final prefs = await SharedPreferences.getInstance();
-  var phoneNumber = prefs.getString('phoneNumber');
-  bool permissionsGranted = prefs.getBool('permissionsGranted') ?? false;
+  final userId = prefs.getString(AppConstants.prefUserId);
 
-  runApp(
-      MyApp(phoneNumber: phoneNumber, permissionsGranted: permissionsGranted));
+  runApp(CycloneXApp(isOnboarded: userId != null && userId.isNotEmpty));
 }
 
-class MyApp extends StatefulWidget {
-  final String? phoneNumber;
-  final bool permissionsGranted;
-
-  MyApp({Key? key, required this.phoneNumber, required this.permissionsGranted})
-      : super(key: key);
-
-  @override
-  _MyAppState createState() => _MyAppState();
-}
-
-class _MyAppState extends State<MyApp> {
-  int _selectedIndex = 0;
-
-  Widget _buildBody() {
-    if (widget.phoneNumber == null) {
-      return GetPhoneNumber();
-    }
-    if (!widget.permissionsGranted) {
-      return GetPermissions();
-    }
-    return _selectedIndex == 0 ? Home() : WeatherScreen();
-  }
+class CycloneXApp extends StatelessWidget {
+  final bool isOnboarded;
+  const CycloneXApp({super.key, required this.isOnboarded});
 
   @override
   Widget build(BuildContext context) {
-    final bool isSetupComplete =
-        widget.phoneNumber != null && widget.permissionsGranted;
-
     return MaterialApp(
-      title: 'Sahaya',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        scaffoldBackgroundColor: Colors.transparent,
-        canvasColor: Colors.transparent,
-      ),
-      home: Scaffold(
-        backgroundColor: Colors.transparent,
-        body: _buildBody(),
-      ),
+      title: 'CycloneX',
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.dark,
+      home: isOnboarded ? const AppShell() : const OnboardingScreen(),
     );
-  }
-
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
   }
 }

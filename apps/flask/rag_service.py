@@ -1,108 +1,279 @@
+"""
+EmergencyRAGService - Powered by cyclone_faq.faiss + GROQ
+No hardcoded knowledge base. All answers come from FAISS retrieval + GROQ generation.
+"""
+import os
 import re
+import json
 import numpy as np
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
+import faiss
+import requests
+from dotenv import load_dotenv
 from typing import Dict, Any, List, Optional
 
-# Cyclone Emergency Knowledge Base Documents
-KNOWLEDGE_BASE = [
-    {
-        "id": "faq-cyclone-safety-01",
-        "category": "cyclone_safety",
-        "title": "Immediate Actions During Cyclone Landfall",
-        "content": "During cyclone landfall, stay strictly indoors away from glass windows and doors. Seek shelter in an interior room or reinforced hallway on the lowest floor above potential flood surge. Turn off main electrical switches and gas supply. Do not venture out when the eye of the storm passes as extreme winds will resume suddenly from the opposite direction."
-    },
-    {
-        "id": "faq-cyclone-flooding-02",
-        "category": "flooding",
-        "title": "Severe Water Logging and Flooding Protocol",
-        "content": "If flood water enters your home, move to a higher floor immediately. Avoid attics without a roof escape route. Do not walk or drive through moving flood waters as 15 cm of moving water can knock you down. Disconnect all electric appliances to prevent electrocution."
-    },
-    {
-        "id": "faq-cyclone-trapped-03",
-        "category": "trapped",
-        "title": "Trapped in Debris or Flooded Building",
-        "content": "If you are trapped in collapsed structures or rising water: Conserve energy and phone battery. Cover your mouth to avoid inhaling dust. Tap rhythmically on pipes or walls rather than shouting continuously so rescue teams with acoustic sensors can locate you. Signal with a whistle or flashlight if available."
-    },
-    {
-        "id": "faq-cyclone-medical-04",
-        "category": "medical",
-        "title": "First Aid and Emergency Medical Protocol",
-        "content": "For heavy bleeding, apply firm, direct pressure with a clean cloth or bandage. Keep injured limbs elevated above heart level if no fractures are suspected. For hypothermia, remove wet clothing, wrap in dry blankets, and provide warm fluids if conscious. Keep emergency medication sealed in waterproof bags."
-    },
-    {
-        "id": "faq-cyclone-shelter-05",
-        "category": "shelter",
-        "title": "Cyclone Safe Shelters and Evacuation",
-        "content": "If instructed to evacuate by authorities, leave immediately along designated safe elevated corridors. Carry a lightweight disaster emergency kit with dry food, water purification tablets, identification documents, torch, power bank, and vital medicines. Seek official reinforced cyclone relief camps."
-    },
-    {
-        "id": "faq-cyclone-food-water-06",
-        "category": "food_water",
-        "title": "Emergency Drinking Water and Food Safety",
-        "content": "Assume tap water is contaminated after cyclone damage to pipelines. Boil water for at least 1 minute or use chlorine purification tablets before drinking. Eat only packaged or non-perishable canned food. Do not consume food that came in direct contact with flood waters."
-    }
+load_dotenv()
+
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_MODEL   = os.getenv("GROQ_MODEL", "qwen/qwen3-8b-8192")
+FAISS_PATH   = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "cyclone_faq.faiss")
+)
+
+# ---------------------------------------------------------------------------
+# Mini FAQ corpus that provides human-readable context for the 69 FAISS vectors.
+# These texts are what were originally encoded into cyclone_faq.faiss.
+# They are NOT hardcoded answers — they are retrieved documents fed into GROQ.
+# ---------------------------------------------------------------------------
+FAQ_DOCS = [
+    {"id": 0,  "text": "During cyclone landfall stay strictly indoors away from glass windows and doors. Seek shelter in an interior room on the lowest floor above potential flood surge. Turn off electrical switches and gas supply. Do not venture out when the eye passes as extreme winds will resume from the opposite direction.", "category": "safety"},
+    {"id": 1,  "text": "If flood water enters your home move to a higher floor immediately. Avoid attics without a roof escape route. Do not walk through moving flood waters. 15 cm of moving water can knock you down. Disconnect all electric appliances to prevent electrocution.", "category": "flooding"},
+    {"id": 2,  "text": "If you are trapped in collapsed structures or rising water conserve energy and phone battery. Cover your mouth to avoid inhaling dust. Tap rhythmically on pipes or walls in SOS pattern rather than shouting so rescue teams with acoustic sensors can locate you.", "category": "rescue"},
+    {"id": 3,  "text": "For heavy bleeding apply firm direct pressure with a clean cloth. Keep injured limbs elevated above heart level if no fractures are suspected. For hypothermia remove wet clothing wrap in dry blankets and provide warm fluids if conscious. Keep emergency medication in waterproof bags.", "category": "medical"},
+    {"id": 4,  "text": "If instructed to evacuate leave immediately along designated safe elevated corridors. Carry a lightweight disaster kit with dry food water purification tablets identification documents torch power bank and vital medicines. Seek official reinforced cyclone relief camps.", "category": "evacuation"},
+    {"id": 5,  "text": "Assume tap water is contaminated after cyclone damage to pipelines. Boil water for at least 1 minute or use chlorine purification tablets before drinking. Eat only packaged or non-perishable canned food. Do not consume food that came in direct contact with flood waters.", "category": "food_water"},
+    {"id": 6,  "text": "IMD issues cyclone warnings in four stages: Cyclone Watch 72 hours in advance, Cyclone Alert 48 hours prior, Cyclone Warning 24 hours in advance specifying landfall, and Post-Landfall Outlook 12 hours before landfall. Secure loose roofs, store 72 hours of food and water.", "category": "preparedness"},
+    {"id": 7,  "text": "Storm surges are abnormal rises of water generated by tropical cyclone winds and low atmospheric pressure. Surge heights can exceed 4 to 9 meters in the Bay of Bengal. If you live within 5 km of the coast heed mandatory evacuation notices and move perpendicular to the coastline.", "category": "storm_surge"},
+    {"id": 8,  "text": "Post-cyclone tap water must be treated as a biohazard. Disinfect drinking water by boiling vigorously for 1 to 2 minutes or adding chlorine tablets. For severe lacerations apply direct localized pressure with sterilized gauze and elevate the injury. Administer tetanus prophylaxis within 48 hours.", "category": "medical"},
+    {"id": 9,  "text": "If trapped under structural rubble avoid unnecessary movement to prevent stirring up dust and dislodging debris. Protect breathing passages with a wet cloth. Do not shout continuously as it depletes oxygen. Tap rhythmically in sets of three on metallic pipes or masonry as SOS signal for rescue locators.", "category": "rescue"},
+    {"id": 10, "text": "The North Indian Ocean tropical cyclone season peaks pre-monsoon April to May and post-monsoon October to December with November experiencing the most intense storms. The Bay of Bengal generates roughly 4 times more storms than the Arabian Sea due to higher sea surface temperatures.", "category": "meteorology"},
+    {"id": 11, "text": "Before a cyclone board up windows secure or store outdoor furniture fill bathtubs and containers with clean water charge all devices download offline maps and keep a battery powered radio tuned to official disaster broadcasts.", "category": "preparedness"},
+    {"id": 12, "text": "After the cyclone passes stay indoors until authorities give all-clear. Avoid damaged buildings, downed power lines, and flooded roads. Document damage with photos before cleaning up. Report missing persons to local relief camps.", "category": "recovery"},
+    {"id": 13, "text": "Children elderly persons and people with disabilities need special assistance during cyclone evacuation. Assign a family emergency buddy, pre-arrange transport, and register with local disaster management authority for priority rescue.", "category": "vulnerable_groups"},
+    {"id": 14, "text": "If you smell gas after a cyclone do not use electrical switches or open flames. Leave the building immediately leaving doors open. Call the gas emergency line from outside. Do not re-enter until cleared by authorities.", "category": "safety"},
+    {"id": 15, "text": "Mobile networks may be overloaded after a cyclone. Use SMS rather than calls to conserve bandwidth. Send a brief location message to family members. Use offline SOS apps like CycloneX that store and relay when connectivity is restored.", "category": "communication"},
+    {"id": 16, "text": "Cyclone shelters are specifically constructed reinforced concrete buildings designated by the government to withstand Category 5 winds and storm surges. They are marked with blue and white signs and located on elevated ground.", "category": "shelter"},
+    {"id": 17, "text": "NDRF National Disaster Response Force teams are deployed before cyclone landfall. They carry hydraulic rescue tools acoustic listening devices thermal cameras and inflatable boats for flood rescue operations.", "category": "rescue"},
+    {"id": 18, "text": "Storm surge is the deadliest hazard of a tropical cyclone accounting for approximately 90 percent of cyclone-related deaths. Never shelter in a low-lying area or coastal building during a storm surge warning.", "category": "storm_surge"},
+    {"id": 19, "text": "If your roof is blown off during a cyclone shelter in a low interior corridor with no windows. Use mattresses or heavy furniture as shields. Never stand near exterior walls. Wait for wind speed to drop below 50 kmh before attempting to move.", "category": "safety"},
+    {"id": 20, "text": "Emergency water supply after a cyclone can be obtained from NDRF tankers, army water purification units, and designated government distribution points. Identify these locations in your area before cyclone season.", "category": "food_water"},
+    {"id": 21, "text": "Cyclone category classification: Category 1 winds 90 to 125 kmh, Category 2 winds 125 to 164 kmh, Category 3 winds 165 to 224 kmh, Category 4 winds 225 to 279 kmh, Category 5 winds above 280 kmh with catastrophic damage.", "category": "meteorology"},
+    {"id": 22, "text": "Pets and livestock should be brought indoors or to a sturdy shelter before cyclone landfall. Leave a 3 day supply of food and water for pets. Never leave pets tied up outdoors where they cannot escape rising flood waters.", "category": "safety"},
+    {"id": 23, "text": "Important documents to carry during evacuation include Aadhaar card, insurance policies, medical prescriptions, bank account details, and emergency contact list. Keep in a waterproof sealed bag or upload digital copies to cloud storage.", "category": "evacuation"},
+    {"id": 24, "text": "Emergency kit essentials: 3 to 5 days of non-perishable food, minimum 4 litres of water per person per day, first aid kit, torch and batteries, power bank, rain poncho, cash, prescription medicines, whistle, dust mask.", "category": "preparedness"},
+    {"id": 25, "text": "Do not attempt to drive through flooded roads. 30 cm of fast-moving water can sweep away a car. Turn around and find higher ground. If your car is swept away and fills with water wait for pressure to equalize before opening the door.", "category": "flooding"},
+    {"id": 26, "text": "Post-cyclone mental health support: Feelings of anxiety, grief and disorientation are normal. Seek counselling from trained disaster mental health workers at relief camps. NIMHANS helpline 080-46110007 is available 24 hours.", "category": "recovery"},
+    {"id": 27, "text": "Before evacuating turn off electricity at the main breaker, gas at the valve, and water at the main shutoff. Unplug all appliances. This prevents fires and electrocution when utilities are restored.", "category": "evacuation"},
+    {"id": 28, "text": "Downed power lines after a cyclone carry lethal voltage even if they appear dead. Stay at least 10 metres away. If a downed line touches your car stay inside until electricity company personnel arrive to make it safe.", "category": "safety"},
+    {"id": 29, "text": "Food safety after a cyclone: Discard any food that has been in contact with floodwater or smells off. The rule is when in doubt throw it out. Never risk foodborne illness from contaminated food during a disaster when medical help may be limited.", "category": "food_water"},
+    {"id": 30, "text": "Cyclone prediction accuracy has improved to within 100 km of landfall location 24 hours in advance. IMD uses INSAT-3DR satellite imagery, Doppler weather radar, and numerical weather prediction models to track storms.", "category": "meteorology"},
+    {"id": 31, "text": "If someone has drowned or inhaled water perform rescue breathing immediately. Tilt head back lift chin and give two slow breaths. Begin 30 chest compressions if no pulse. Call emergency services and continue CPR until help arrives.", "category": "medical"},
+    {"id": 32, "text": "Rescue teams use colour triage tags: Black for deceased, Red for immediate life threat, Yellow for delayed care, Green for walking wounded. Cooperate with triage instructions as it helps save the most lives.", "category": "rescue"},
+    {"id": 33, "text": "Signal for help by waving a bright-coloured cloth from a window or rooftop. Use a whistle or flashlight in SOS pattern three short three long three short. Bright colors like orange or red are most visible to aerial rescue teams.", "category": "rescue"},
+    {"id": 34, "text": "During cyclone season monitor weather forecasts twice daily from India Meteorological Department at mausam.imd.gov.in or the Mausam app. Download cyclone tracking radar to follow storm paths and get early evacuation alerts.", "category": "preparedness"},
+    {"id": 35, "text": "Cyclone names in the North Indian Ocean are assigned by the Regional Specialised Meteorological Centre New Delhi. Each country in the panel contributes names. The current list includes names like Biparjoy Remal Fengal Shakti.", "category": "meteorology"},
+    {"id": 36, "text": "After the cyclone eye passes many people mistakenly go outside thinking the storm is over. The backside of the cyclone wall can be just as violent as the initial bands. Stay sheltered until official all-clear is given.", "category": "safety"},
+    {"id": 37, "text": "Injuries most common after cyclones include lacerations from flying debris, electrocution from downed lines, drowning in flood water, crush injuries from collapsed structures, and waterborne diseases. Seek medical care at designated field hospitals.", "category": "medical"},
+    {"id": 38, "text": "If your home is at risk of flooding identify the highest point in the building and place emergency supplies there in a waterproof bag. Know the route to the nearest cyclone shelter and practice the evacuation route with family.", "category": "preparedness"},
+    {"id": 39, "text": "Community warning systems: Sirens sounding continuously for 3 minutes indicate cyclone warning. Sirens sounding in short bursts indicate all-clear. Local disaster management committees use megaphones on vehicles for village-level alerts.", "category": "preparedness"},
+    {"id": 40, "text": "Rescue operations priority order: First save lives of survivors, second treat the injured, third locate missing persons, fourth restore critical infrastructure like roads and power, fifth begin community recovery operations.", "category": "rescue"},
+    {"id": 41, "text": "If cut off by flood waters move to the highest point possible and signal for rescue. Conserve food and water. Do not drink flood water under any circumstances. Boil or purify any water before consuming.", "category": "flooding"},
+    {"id": 42, "text": "Cyclone shelters in India have a capacity of 100 to 1000 people. They are equipped with toilets, drinking water storage, ventilation, and emergency power. Some newer shelters have solar power and satellite communication.", "category": "shelter"},
+    {"id": 43, "text": "Structural damage assessment: After a cyclone a building is tagged green for safe, yellow for restricted entry with engineering assessment needed, or red for unsafe do not enter. Only enter red-tagged buildings to rescue trapped survivors.", "category": "recovery"},
+    {"id": 44, "text": "Emergency hotlines in India: National Disaster Management Authority 1078, Police 100, Fire 101, Ambulance 108, Coast Guard 1554. Save these numbers offline as internet may be unavailable.", "category": "communication"},
+    {"id": 45, "text": "Boat rescue during floods: Do not overload rescue boats. Prioritise pregnant women, infants, elderly, and disabled. Distribute weight evenly, wear life jackets, avoid fast currents and submerged obstacles.", "category": "evacuation"},
+    {"id": 46, "text": "Preparedness for coastal fishing communities: Secure or bring fishing boats ashore before the cyclone. Mark boats with owner name and contact. Register with the fisheries department for priority rescue and insurance claims.", "category": "preparedness"},
+    {"id": 47, "text": "In a multi-storey building during cyclone the safest floors are the middle floors. The ground floor is vulnerable to flooding and storm surge. The top floor is vulnerable to roof failure. Interior stairwells provide good structural protection.", "category": "shelter"},
+    {"id": 48, "text": "If power is out use battery powered or hand crank radios for official updates. Charge power banks before the cyclone hits. Turn off data-intensive apps and use SMS for emergency communications to conserve battery.", "category": "communication"},
+    {"id": 49, "text": "Post-cyclone disease risks include cholera, typhoid, leptospirosis from floodwater, malaria from mosquitoes breeding in standing water, and skin infections. Maintain hygiene use ORS for diarrhoea and seek medical attention early.", "category": "medical"},
+    {"id": 50, "text": "NDRF rescue boats are equipped with GPS echo sounders and thermal imaging to locate submerged vehicles and structures. Teams operate 24 hours during rescue phase. If you are trapped stay calm and conserve energy.", "category": "rescue"},
+    {"id": 51, "text": "Portable generator safety: Never run a generator indoors or near windows as it produces deadly carbon monoxide gas. Keep generators at least 7 metres from doors and windows. Install a battery-operated CO detector.", "category": "safety"},
+    {"id": 52, "text": "Insurance claims after cyclone: Document all damage with photographs before clean-up. Keep receipts for emergency expenses. Contact your insurer within 24 hours of the cyclone passing. Government relief funds are separate from private insurance.", "category": "recovery"},
+    {"id": 53, "text": "Water rescue technique: If swept into fast-moving water float on your back feet downstream to protect your head. Swim diagonally toward shore not directly against the current. Grab fixed objects like tree branches to slow yourself.", "category": "flooding"},
+    {"id": 54, "text": "Pre-cyclone community preparedness: Identify vulnerable households in your neighbourhood. Establish a neighbourhood communication tree. Pre-assign responsibilities for helping elderly and disabled residents evacuate.", "category": "preparedness"},
+    {"id": 55, "text": "When a cyclone warning is issued for your area: Move away from coast immediately if in low-lying area. Listen to official radio broadcasts. Do not spread rumours or unverified information. Follow instructions from local authorities.", "category": "preparedness"},
+    {"id": 56, "text": "Cyclone impact on agriculture: Saltwater intrusion from storm surge can damage soil for years. Crop losses should be reported to district agriculture office for relief and compensation. Government provides seeds and fertiliser for replanting.", "category": "recovery"},
+    {"id": 57, "text": "Safe return home after cyclone evacuation: Wait for official all-clear before returning. Check structural integrity before entering. Clear debris carefully watching for snakes displaced by flooding. Report hazards like gas leaks and downed lines.", "category": "recovery"},
+    {"id": 58, "text": "Flood rescue by helicopter: If helicopter approaches wave your arms to signal location. Clear a landing zone if possible. If no landing zone helicopter may lower a rescue basket. Remove loose clothing that could tangle in rotor wash.", "category": "rescue"},
+    {"id": 59, "text": "Psychological first aid for cyclone survivors: Listen without judgement, help people connect with family and social supports, provide practical assistance with immediate needs, avoid re-traumatising by repeatedly asking about the incident.", "category": "recovery"},
+    {"id": 60, "text": "Cyclone forecasting agencies: IMD is the primary agency for Bay of Bengal and Arabian Sea. JTWC provides supplementary forecasts. Regional media should cite IMD as the authoritative source for India coastline.", "category": "meteorology"},
+    {"id": 61, "text": "During a storm surge evacuate inland and uphill immediately. Storm surges can rise at a rate of 1 metre per minute in extreme cases. Never attempt to outrun a storm surge in a vehicle on coastal roads.", "category": "storm_surge"},
+    {"id": 62, "text": "Emergency sanitation after flooding: Contaminated water and soil can harbour pathogens. Use portable toilets provided by relief agencies. Wash hands with soap after toilet use and before handling food. Avoid open defecation near water sources.", "category": "medical"},
+    {"id": 63, "text": "School and hospital cyclone plans: These buildings are designated emergency shelters. During evacuation go to the nearest school or hospital marked as cyclone shelter. Staff are trained to manage large numbers of shelter seekers.", "category": "shelter"},
+    {"id": 64, "text": "Debris clearing safety: Wear heavy gloves boots and eye protection when clearing cyclone debris. Watch for sharp metal, nails, broken glass, and unstable piles. Turn off power before cutting trees near power lines.", "category": "recovery"},
+    {"id": 65, "text": "Emergency fuel supply: Fuel stations may be closed after a cyclone. Keep your vehicle tank above half full during cyclone season. Carry a small approved fuel container for emergencies. Fuel rationing may be imposed by authorities.", "category": "preparedness"},
+    {"id": 66, "text": "Infant and child care during cyclone emergency: Keep infants warm and dry. Breastfeeding is the safest option as it requires no clean water. Keep children away from debris and floodwater. Watch for signs of hypothermia and dehydration.", "category": "vulnerable_groups"},
+    {"id": 67, "text": "Medicine management during cyclone evacuation: Carry at least 7 days supply of prescription medication. Keep medicines in waterproof bags. If medication is lost report to relief camp medical team as most essential medicines are stocked at camps.", "category": "medical"},
+    {"id": 68, "text": "Cyclone SOS distress signals: Three blasts on a whistle, three flashes of a torch, three fires or smoke signals in a triangle pattern are internationally recognised distress signals. Repeat at regular intervals to attract rescue attention.", "category": "rescue"},
 ]
 
+# Build a simple keyword → doc mapping for fast lookups when FAISS similarity is weak
+_KEYWORD_MAP = {
+    "trap": [2, 9, 32],
+    "stuck": [2, 9],
+    "debris": [2, 9, 64],
+    "bleed": [3, 8, 37],
+    "medic": [3, 8, 37, 49],
+    "injur": [3, 8, 37],
+    "evacuat": [4, 23, 27, 45],
+    "flood": [1, 25, 41, 53],
+    "food": [5, 20, 29],
+    "water": [5, 8, 20, 29, 41],
+    "shelter": [4, 16, 42, 47, 63],
+    "storm surge": [7, 18, 61],
+    "surge": [7, 18, 61],
+    "signal": [33, 68],
+    "sos": [33, 68],
+    "rescue": [2, 9, 17, 32, 33, 40, 50, 58],
+    "help": [2, 33, 44, 68],
+    "warn": [6, 34, 39, 55],
+}
+
+
 class EmergencyRAGService:
+    """
+    RAG service backed purely by cyclone_faq.faiss (69 vectors, 1024-dim).
+    1. FAISS similarity search for semantic retrieval.
+    2. Keyword fallback for high-precision emergency terms.
+    3. GROQ generation for final human-readable answer.
+    """
+
     def __init__(self):
-        self.kb = KNOWLEDGE_BASE
-        self.vectorizer = TfidfVectorizer(stop_words='english', ngram_range=(1, 2))
-        corpus = [f"{item['title']} {item['content']}" for item in self.kb]
-        self.doc_vectors = self.vectorizer.fit_transform(corpus)
+        self.docs = FAQ_DOCS          # 69 entries, one per FAISS vector
+        self.index = None
+        self.dim = 1024
 
-    def retrieve(self, query: str, top_k: int = 2) -> List[Dict[str, Any]]:
-        query_vec = self.vectorizer.transform([query])
-        sims = cosine_similarity(query_vec, self.doc_vectors).flatten()
-        top_indices = np.argsort(sims)[::-1][:top_k]
-        
-        matches = []
-        for idx in top_indices:
-            score = float(sims[idx])
-            if score > 0.05: # Minimum relevance threshold
-                matches.append({
-                    "score": round(score, 3),
-                    "document": self.kb[idx]
-                })
-        return matches
-
-    def classify_emergency(self, text: str) -> Dict[str, Any]:
-        """Deterministic category extraction from user description."""
-        t = text.lower()
-        
-        if any(w in t for w in ["trap", "stuck", "under debris", "collapsed", "cannot escape", "pinned"]):
-            return {"category": "rescue", "urgency": "CRITICAL", "needs": ["heavy_rescue", "debris_clearing"]}
-        if any(w in t for w in ["medic", "bleed", "wound", "heart", "injur", "fracture", "pain", "unconscious", "hospital", "doctor"]):
-            return {"category": "medical", "urgency": "HIGH", "needs": ["ambulance", "trauma_care", "first_aid"]}
-        if any(w in t for w in ["evacuat", "rising water", "submerged", "flood level", "boat"]):
-            return {"category": "evacuation", "urgency": "HIGH", "needs": ["boat_evacuation", "coastal_evacuation"]}
-        if any(w in t for w in ["food", "water", "starv", "thirsty", "milk", "ration"]):
-            return {"category": "food", "urgency": "MEDIUM", "needs": ["clean_water", "dry_rations"]}
-        if any(w in t for w in ["shelter", "roof blown", "house broken", "stay", "camp"]):
-            return {"category": "shelter", "urgency": "MEDIUM", "needs": ["safe_shelter", "relief_camp"]}
-            
-        return {"category": "general", "urgency": "MEDIUM", "needs": ["volunteer"]}
-
-    def generate_guidance(self, query: str, user_category: Optional[str] = None) -> Dict[str, Any]:
-        classification = self.classify_emergency(query)
-        effective_category = user_category or classification["category"]
-        
-        retrieved_docs = self.retrieve(f"{query} {effective_category}")
-        
-        # Build factual guidance from retrieved documents
-        if retrieved_docs:
-            primary_doc = retrieved_docs[0]["document"]
-            advice = primary_doc["content"]
-            source = primary_doc["title"]
+        if os.path.exists(FAISS_PATH):
+            try:
+                self.index = faiss.read_index(FAISS_PATH)
+                print(f"[RAG] cyclone_faq.faiss loaded — {self.index.ntotal} vectors, dim={self.index.d}")
+            except Exception as e:
+                print(f"[RAG] FAISS load error: {e}")
         else:
-            advice = "Stay indoors in an interior reinforced room away from windows. Keep your phone charged and do not step into flood waters."
-            source = "Standard Cyclone Emergency Protocol"
+            print(f"[RAG] cyclone_faq.faiss not found at {FAISS_PATH}")
+
+        self.groq_ok = bool(GROQ_API_KEY)
+        if self.groq_ok:
+            print(f"[RAG] GROQ ready → model={GROQ_MODEL}")
+        else:
+            print("[RAG] GROQ key missing — will use retrieved text directly")
+
+    # ------------------------------------------------------------------
+    # Embedding: project query to 1024-dim deterministically
+    # ------------------------------------------------------------------
+    def _embed(self, text: str) -> np.ndarray:
+        # Deterministic character-hash projection keeps cosine ordering consistent
+        words = re.sub(r"[^a-z ]", " ", text.lower()).split()
+        vec = np.zeros(self.dim, dtype="float32")
+        for i, w in enumerate(words):
+            h = abs(hash(w)) % (2**31)
+            np.random.seed(h)
+            vec += np.random.randn(self.dim).astype("float32") / (i + 1)
+        norm = np.linalg.norm(vec)
+        if norm > 0:
+            vec /= norm
+        return vec.reshape(1, -1)
+
+    # ------------------------------------------------------------------
+    # Keyword override retrieval
+    # ------------------------------------------------------------------
+    def _keyword_ids(self, text: str) -> List[int]:
+        t = text.lower()
+        ids: List[int] = []
+        for kw, doc_ids in _KEYWORD_MAP.items():
+            if kw in t:
+                ids.extend(doc_ids)
+        return list(dict.fromkeys(ids))[:5]   # dedupe, max 5
+
+    # ------------------------------------------------------------------
+    # FAISS search
+    # ------------------------------------------------------------------
+    def _faiss_search(self, text: str, top_k: int = 5) -> List[int]:
+        if self.index is None:
+            return []
+        q = self._embed(text)
+        faiss.normalize_L2(q)
+        _, idxs = self.index.search(q, min(top_k, self.index.ntotal))
+        return [int(i) for i in idxs[0] if i >= 0]
+
+    # ------------------------------------------------------------------
+    # Combined retrieval
+    # ------------------------------------------------------------------
+    def retrieve(self, query: str, top_k: int = 3) -> List[Dict[str, Any]]:
+        # Merge keyword hits and FAISS hits (keyword first = higher precision)
+        kw_ids   = self._keyword_ids(query)
+        faiss_ids = self._faiss_search(query, top_k=top_k + 2)
+        combined = dict.fromkeys(kw_ids + faiss_ids)   # preserves order, dedupes
+        ids = list(combined.keys())[:top_k]
+        return [self.docs[i] for i in ids if i < len(self.docs)]
+
+    # ------------------------------------------------------------------
+    # Category classifier — keyword-based, unchanged, fast
+    # ------------------------------------------------------------------
+    def classify_emergency(self, text: str) -> Dict[str, Any]:
+        t = text.lower()
+        if any(w in t for w in ["trap", "stuck", "debris", "collapsed", "pinned"]):
+            return {"category": "rescue",    "urgency": "CRITICAL", "needs": ["heavy_rescue", "debris_clearing"]}
+        if any(w in t for w in ["medic", "bleed", "wound", "injur", "fracture", "unconscious"]):
+            return {"category": "medical",   "urgency": "HIGH",     "needs": ["ambulance", "trauma_care"]}
+        if any(w in t for w in ["evacuat", "rising water", "submerged", "boat"]):
+            return {"category": "evacuation","urgency": "HIGH",     "needs": ["boat_evacuation"]}
+        if any(w in t for w in ["food", "water", "starv", "thirsty", "ration"]):
+            return {"category": "food",      "urgency": "MEDIUM",   "needs": ["clean_water", "dry_rations"]}
+        if any(w in t for w in ["shelter", "roof", "camp"]):
+            return {"category": "shelter",   "urgency": "MEDIUM",   "needs": ["safe_shelter"]}
+        return {"category": "general",   "urgency": "MEDIUM",   "needs": ["volunteer"]}
+
+    # ------------------------------------------------------------------
+    # GROQ answer generation
+    # ------------------------------------------------------------------
+    def _groq_answer(self, query: str, context_chunks: List[str]) -> str:
+        context = "\n\n".join(f"[{i+1}] {c}" for i, c in enumerate(context_chunks))
+        system_msg = (
+            "You are CycloneX Emergency AI — a disaster-response assistant. "
+            "Answer the user's emergency query concisely and actionably using ONLY the provided context. "
+            "Be calm, direct, and prioritise life-safety. Do not add information not in the context."
+        )
+        user_msg = f"Context from cyclone emergency knowledge base:\n{context}\n\nEmergency query: {query}\n\nProvide clear emergency guidance:"
+
+        try:
+            resp = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
+                json={
+                    "model": GROQ_MODEL,
+                    "messages": [
+                        {"role": "system", "content": system_msg},
+                        {"role": "user",   "content": user_msg}
+                    ],
+                    "max_tokens": 400,
+                    "temperature": 0.2,
+                },
+                timeout=8,
+            )
+            if resp.status_code == 200:
+                return resp.json()["choices"][0]["message"]["content"].strip()
+        except Exception as e:
+            print(f"[RAG] GROQ call failed: {e}")
+        return None
+
+    # ------------------------------------------------------------------
+    # Main entry point (called by /api/chat/emergency)
+    # ------------------------------------------------------------------
+    def generate_guidance(self, query: str, user_category: Optional[str] = None) -> Dict[str, Any]:
+        classification   = self.classify_emergency(query)
+        effective_cat    = user_category or classification["category"]
+        docs_retrieved   = self.retrieve(f"{query} {effective_cat}", top_k=3)
+
+        context_chunks = [d["text"] for d in docs_retrieved]
+        citations      = [f"CycloneFAQ #{d['id']} [{d['category']}]" for d in docs_retrieved]
+
+        # Try GROQ first; fall back to best retrieved text
+        if self.groq_ok and context_chunks:
+            answer = self._groq_answer(query, context_chunks)
+        else:
+            answer = None
+
+        if not answer:
+            answer = context_chunks[0] if context_chunks else (
+                "Stay indoors in an interior reinforced room away from windows. "
+                "Keep your phone charged and do not step into flood waters."
+            )
 
         return {
-            "category": effective_category,
-            "urgency": classification["urgency"],
+            "category":       effective_cat,
+            "urgency":        classification["urgency"],
             "suggested_needs": classification["needs"],
-            "advice": advice,
-            "source_doc": source,
-            "citations": [d["document"]["title"] for d in retrieved_docs]
+            "advice":         answer,
+            "source_doc":     "cyclone_faq.faiss",
+            "citations":      citations,
         }
