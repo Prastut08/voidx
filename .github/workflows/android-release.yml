@@ -81,9 +81,9 @@ jobs:
           fi
 
       - name: Build Android Release APK
-        working-directory: apps/mobile
+        working-directory: apps/mobile/android
         run: |
-          flutter build apk --release --no-tree-shake-icons -v --dart-define=ENVIRONMENT=prod
+          ./gradlew assembleRelease --stacktrace --info
 
       - name: Build Android App Bundle (AAB)
         working-directory: apps/mobile
