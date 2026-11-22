@@ -1,19 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:convert';
-import 'package:flutter_config/flutter_config.dart';
 import 'package:http/http.dart' as http;
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:geolocator/geolocator.dart';
+import 'config/app_config.dart';
 
-String _safeBackendUrl() {
-  try {
-    final val = FlutterConfig.get('BACKEND_URL');
-    if (val != null && val.toString().isNotEmpty) return val.toString();
-  } catch (_) {}
-  final host = Uri.base.host.isNotEmpty ? Uri.base.host : 'localhost';
-  return 'http://$host:8080';
-}
+String _safeBackendUrl() => AppConfig.baseUrl;
 
 class WeatherScreen extends StatefulWidget {
   @override
@@ -22,23 +14,11 @@ class WeatherScreen extends StatefulWidget {
 
 class _WeatherScreenState extends State<WeatherScreen> {
   late Map<String, dynamic> weatherData = {};
-  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
-      FlutterLocalNotificationsPlugin();
 
   @override
   void initState() {
     super.initState();
     _loadWeatherData();
-    _initializeNotifications();
-    _startPeriodicNotifications();
-  }
-
-  Future<void> _initializeNotifications() async {
-    const AndroidInitializationSettings initializationSettingsAndroid =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
-    final InitializationSettings initializationSettings =
-        InitializationSettings(android: initializationSettingsAndroid);
-    await flutterLocalNotificationsPlugin.initialize(initializationSettings);
   }
 
   // Future<void> _loadWeatherData() async {
@@ -66,39 +46,6 @@ class _WeatherScreenState extends State<WeatherScreen> {
     } else {
       _loadWeatherData();
     }
-  }
-
-  Future<void> _showNotification() async {
-    final color = weatherData['Color'];
-    final alert = weatherData['Alert'];
-    final time = weatherData['Time'];
-
-    const AndroidNotificationDetails androidPlatformChannelSpecifics =
-        AndroidNotificationDetails(
-      'weather_channel',
-      'Weather Notifications',
-      importance: Importance.max,
-      priority: Priority.high,
-      ticker: 'ticker',
-      styleInformation: BigTextStyleInformation(''),
-    );
-    const NotificationDetails platformChannelSpecifics =
-        NotificationDetails(android: androidPlatformChannelSpecifics);
-    await flutterLocalNotificationsPlugin.show(
-      1,
-      '$color Alert',
-      '$alert in $time hrs. Click to know more.',
-      platformChannelSpecifics,
-      payload: 'Weather',
-    );
-  }
-
-  Future<void> _startPeriodicNotifications() async {
-    await Future.delayed(Duration(minutes: 20));
-    if (weatherData['Color'].toString().toLowerCase() != 'white') {
-      _showNotification();
-    }
-    _startPeriodicNotifications();
   }
 
   IconData _getWeatherIcon(String weather) {

@@ -1,26 +1,18 @@
- import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:js' as js;
-import 'package:flutter_config/flutter_config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:internet_connection_checker/internet_connection_checker.dart';
 import 'package:http/http.dart' as http;
 import 'sos_chat_panel.dart';
+import 'config/app_config.dart';
 
-String _safeBackendUrl() {
-  try {
-    final val = FlutterConfig.get('BACKEND_URL');
-    if (val != null && val.toString().isNotEmpty) return val.toString();
-  } catch (_) {}
-  final host = Uri.base.host.isNotEmpty ? Uri.base.host : 'localhost';
-  return 'http://$host:8080';
-}
+String _safeBackendUrl() => AppConfig.baseUrl;
 
 class Home extends StatefulWidget {
   @override
@@ -526,7 +518,7 @@ class _HomeState extends State<Home> {
     if (isOffline) {
       while (isOffline) {
         await Future.delayed(Duration(hours: 2));
-        final smsNumber = FlutterConfig.get('SMS_NUMBER');
+        const smsNumber = String.fromEnvironment('SMS_NUMBER', defaultValue: '112');
         final lat = currentLat;
         final lng = currentLng;
         final message = 'offline $lat $lng';

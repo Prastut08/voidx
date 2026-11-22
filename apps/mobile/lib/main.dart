@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-
-import 'package:flutter_config/flutter_config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'getPhoneNumber.dart';
@@ -10,11 +8,6 @@ import 'core/theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  try {
-    await FlutterConfig.loadEnvVariables();
-  } catch (e) {
-    debugPrint("FlutterConfig not supported on this platform: $e");
-  }
   final prefs = await SharedPreferences.getInstance();
   var phoneNumber = prefs.getString('phoneNumber');
   bool permissionsGranted = prefs.getBool('permissionsGranted') ?? false;

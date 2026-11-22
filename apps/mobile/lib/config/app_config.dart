@@ -1,6 +1,5 @@
 // lib/config/app_config.dart
 import 'package:flutter/foundation.dart';
-import 'package:flutter_config/flutter_config.dart';
 
 enum Environment { dev, prod }
 
@@ -12,31 +11,21 @@ class AppConfig {
   static const String _devBaseUrl = 'http://172.25.179.252:8080';
   static const String _devWsUrl = 'ws://172.25.179.252:8080';
 
-  // Production URLs — set via build-time env or remote config
+  // Production URLs
   static const String _prodBaseUrl = 'https://api.cyclonex.live';
   static const String _prodWsUrl = 'wss://api.cyclonex.live';
 
   /// Centralized Backend Base URL
   static String get baseUrl {
-    try {
-      final configUrl = FlutterConfig.get('BACKEND_URL');
-      if (configUrl != null && configUrl.toString().trim().isNotEmpty) {
-        return configUrl.toString().trim();
-      }
-    } catch (_) {}
-
+    const fromDefine = String.fromEnvironment('BACKEND_URL');
+    if (fromDefine.isNotEmpty) return fromDefine;
     return environment == Environment.prod ? _prodBaseUrl : _devBaseUrl;
   }
 
   /// Centralized WebSocket Base URL
   static String get wsUrl {
-    try {
-      final configWs = FlutterConfig.get('WS_URL');
-      if (configWs != null && configWs.toString().trim().isNotEmpty) {
-        return configWs.toString().trim();
-      }
-    } catch (_) {}
-
+    const fromDefine = String.fromEnvironment('WS_URL');
+    if (fromDefine.isNotEmpty) return fromDefine;
     return environment == Environment.prod ? _prodWsUrl : _devWsUrl;
   }
 
