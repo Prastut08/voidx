@@ -83,7 +83,7 @@ jobs:
       - name: Build Android Release APK
         working-directory: apps/mobile
         run: |
-          flutter build apk --release --verbose --dart-define=ENVIRONMENT=prod || (echo "=== GRADLE FAILURE LOGS ===" && cat apps/mobile/build/app/outputs/logs/* 2>/dev/null || true && find apps/mobile/build -name "*.log" -exec cat {} + 2>/dev/null || true && false)
+          flutter build apk --release --no-tree-shake-icons --dart-define=ENVIRONMENT=prod
 
       - name: Build Android App Bundle (AAB)
         working-directory: apps/mobile
