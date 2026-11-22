@@ -95,12 +95,6 @@ class _MyAppState extends State<MyApp> {
       home: Scaffold(
         backgroundColor: Colors.transparent,
         body: _buildBody(),
-        bottomNavigationBar: isSetupComplete
-            ? CustomNavigationBar(
-                selectedIndex: _selectedIndex,
-                onItemTapped: _onItemTapped,
-              )
-            : null,
       ),
     );
   }

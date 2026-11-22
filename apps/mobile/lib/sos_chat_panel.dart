@@ -163,10 +163,12 @@ class _SOSChatPanelState extends State<SOSChatPanel> {
 
   Future<void> _fetchLiveRescueTeams(String category) async {
     try {
-      final res = await http.get(
-        Uri.parse(
-            '${widget.backendUrl}/api/rescue/nearby?lat=$_lat&lng=$_lng&category=$category&limit=3'),
-      ).timeout(const Duration(seconds: 3));
+      final res = await http
+          .get(
+            Uri.parse(
+                '${widget.backendUrl}/api/rescue/nearby?lat=$_lat&lng=$_lng&category=$category&limit=3'),
+          )
+          .timeout(const Duration(seconds: 3));
 
       if (res.statusCode == 200) {
         final data = json.decode(res.body);
@@ -220,10 +222,12 @@ class _SOSChatPanelState extends State<SOSChatPanel> {
 
     // Query RAG Emergency FAQ knowledge base for actionable safety guidance
     try {
-      final res = await http.get(
-        Uri.parse(
-            '${widget.backendUrl}/api/chat/emergency?query=${Uri.encodeComponent(text)}'),
-      ).timeout(const Duration(seconds: 3));
+      final res = await http
+          .get(
+            Uri.parse(
+                '${widget.backendUrl}/api/chat/emergency?query=${Uri.encodeComponent(text)}'),
+          )
+          .timeout(const Duration(seconds: 3));
 
       if (res.statusCode == 200) {
         final data = json.decode(res.body);
@@ -429,7 +433,7 @@ class _SOSChatPanelState extends State<SOSChatPanel> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'CycloneX SOS Assistant',
+                            'VayuSetu SOS Assistant',
                             style: GoogleFonts.lexend(
                               fontWeight: FontWeight.bold,
                               fontSize: 17,
@@ -496,7 +500,8 @@ class _SOSChatPanelState extends State<SOSChatPanel> {
                   ),
                   child: Text(
                     _isAcquiringLocation ? 'Fixing...' : 'Retry GPS',
-                    style: GoogleFonts.lexend(fontSize: 12, fontWeight: FontWeight.bold),
+                    style: GoogleFonts.lexend(
+                        fontSize: 12, fontWeight: FontWeight.bold),
                   ),
                 ),
               ],
@@ -610,7 +615,8 @@ class _SOSChatPanelState extends State<SOSChatPanel> {
                           m['text'],
                           style: GoogleFonts.lexend(
                             fontSize: 13,
-                            color: isUser ? Colors.white : const Color(0xFF1E293B),
+                            color:
+                                isUser ? Colors.white : const Color(0xFF1E293B),
                           ),
                         ),
                         const SizedBox(height: 4),

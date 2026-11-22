@@ -1,3 +1,4 @@
+0.
 <!DOCTYPE html>
 <html>
 
@@ -70,7 +71,7 @@
     /* Floating toggle button in Bottom Left Corner */
     #map-interact-toggle {
       position: fixed;
-      bottom: 24px;
+      bottom: 20px;
       left: 20px;
       z-index: 2147483647;
       /* Maximum z-index to stay above everything */
@@ -118,10 +119,9 @@
       }
     }
 
-    var flutterInteractive = false;
+    var flutterInteractive = true;
     function setFlutterInteractive(active) {
       flutterInteractive = !!active;
-      applyFlutterState();
     }
 
     // Keep Flutter Shadow DOM transparent without killing pointer-events
@@ -148,6 +148,7 @@
             pane.shadowRoot.appendChild(style);
           }
           var canvases = pane.shadowRoot.querySelectorAll('canvas');
+          var pe = flutterInteractive ? 'auto' : 'none';
           canvases.forEach(function (c) {
             c.style.setProperty('background', 'transparent', 'important');
             c.style.setProperty('background-color', 'transparent', 'important');
