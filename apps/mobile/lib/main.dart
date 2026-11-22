@@ -87,6 +87,7 @@ class _MyAppState extends State<MyApp> {
 
     return MaterialApp(
       title: 'Sahaya',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         primarySwatch: Colors.blue,
         scaffoldBackgroundColor: Colors.transparent,

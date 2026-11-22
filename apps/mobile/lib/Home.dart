@@ -20,13 +20,14 @@ String _safeBackendUrl() {
     final val = FlutterConfig.get('BACKEND_URL');
     if (val != null && val.toString().isNotEmpty) return val.toString();
   } catch (_) {}
-  return 'http://172.25.179.252:8080';
+  return 'http://172.25.179.250:8080';
 }
 
 class Home extends StatefulWidget {
   @override
   _HomeState createState() => _HomeState();
 }
+
 class SOSButton extends StatelessWidget {
   final bool isHelping;
   final double currentLat;
@@ -42,8 +43,8 @@ class SOSButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return (!isHelping)
         ? Positioned(
-            bottom: 160.0,
-            right: 20.0,
+            bottom: 175.0,
+            right: 16.0,
             child: FloatingActionButton(
               onPressed: () => _onSOSPressed(context),
               child: Padding(
@@ -99,6 +100,7 @@ class SOSButton extends StatelessWidget {
     }
   }
 }
+
 class _HomeState extends State<Home> {
   double currentLat = 20.5937;
   double currentLng = 78.9629;
@@ -181,7 +183,9 @@ class _HomeState extends State<Home> {
       js.context.callMethod('updateWindyLocation', [currentLat, currentLng]);
     } catch (e) {
       debugPrint('Location error: $e');
-      setState(() { locationLoaded = true; });
+      setState(() {
+        locationLoaded = true;
+      });
     }
   }
 
@@ -220,8 +224,11 @@ class _HomeState extends State<Home> {
     try {
       final double startLatitude = currentLat;
       final double startLongitude = currentLng;
-      final double endLatitude = locationDetails['location']['lat'];
-      final double endLongitude = locationDetails['location']['lng'];
+      final location = locationDetails['location'] as Map<String, dynamic>?;
+      final double endLatitude =
+          (location?['lat'] as num?)?.toDouble() ?? currentLat;
+      final double endLongitude =
+          (location?['lng'] as num?)?.toDouble() ?? currentLng;
 
       double distanceInMeters = Geolocator.distanceBetween(
           startLatitude, startLongitude, endLatitude, endLongitude);
@@ -318,7 +325,9 @@ class _HomeState extends State<Home> {
                   ),
                   SizedBox(height: 22),
                   Text(
-                    locationDetails['type'] == 'victim' ? 'Needs:' : 'Available Assistance:',
+                    locationDetails['type'] == 'victim'
+                        ? 'Needs:'
+                        : 'Available Assistance:',
                     //'Available Assistance:',
                     style: GoogleFonts.getFont(
                       "Lexend",
@@ -392,15 +401,15 @@ class _HomeState extends State<Home> {
     final List<String> messages = [];
     final Telephony telephony = Telephony.instance;
     List<SmsMessage> smsStream = await telephony.getInboxSms(
-		columns: [SmsColumn.ADDRESS, SmsColumn.BODY],
-		filter: SmsFilter.where(SmsColumn.ADDRESS)
-				 .equals("$smsNumber")
-				 .and(SmsColumn.BODY)
-				 .like(""),
-		sortOrder: [OrderBy(SmsColumn.ADDRESS, sort: Sort.ASC),
-			    OrderBy(SmsColumn.BODY)]
-		);
-    
+        columns: [SmsColumn.ADDRESS, SmsColumn.BODY],
+        filter: SmsFilter.where(SmsColumn.ADDRESS)
+            .equals("$smsNumber")
+            .and(SmsColumn.BODY)
+            .like(""),
+        sortOrder: [
+          OrderBy(SmsColumn.ADDRESS, sort: Sort.ASC),
+          OrderBy(SmsColumn.BODY)
+        ]);
 
     await Future.delayed(Duration(minutes: 1));
     smsStream.isEmpty ? print('No messages') : print('Messages found');
@@ -484,9 +493,11 @@ class _HomeState extends State<Home> {
 
   // -----------------------------------------------------------------------------------------------------------------------------------------------
 
-  void makePostRequest(List<String> selectedHelp, bool isHelping, dynamic lat, dynamic lng) async {
+  void makePostRequest(List<String> selectedHelp, bool isHelping, dynamic lat,
+      dynamic lng) async {
     final prefs = await SharedPreferences.getInstance();
-    String phoneNumber = prefs.getString('phoneNumber') ?? 'No phone number set';
+    String phoneNumber =
+        prefs.getString('phoneNumber') ?? 'No phone number set';
 
     String mode = isHelping ? "give" : "need";
     String type = isHelping ? "volunteer" : "victim";
@@ -523,7 +534,6 @@ class _HomeState extends State<Home> {
   void reloadMapMarkers() async {
     await _loadJsonData();
   }
-
 
   void actionButtonClickFn() async {
     try {
@@ -657,7 +667,8 @@ class _HomeState extends State<Home> {
                                   .toList();
                               print('Phone Number: $phoneNumber');
                               print('Selected Help Options: $selectedHelp');
-                              makePostRequest(selectedHelp, isHelping, currentLat, currentLng);
+                              makePostRequest(selectedHelp, isHelping,
+                                  currentLat, currentLng);
                               Navigator.pop(context);
                               reloadMapMarkers();
                             }
@@ -679,12 +690,23 @@ class _HomeState extends State<Home> {
 
   // <--------------------- UI --------------------->
 
+  String _formatType(String raw) {
+    if (raw.isEmpty) return 'Unknown';
+    // Split camelCase into words e.g. reliefCamp → Relief Camp
+    final spaced = raw.replaceAllMapped(
+        RegExp(r'([a-z])([A-Z])'), (m) => '${m[1]} ${m[2]}');
+    return spaced[0].toUpperCase() + spaced.substring(1);
+  }
+
   IconData _getIconForType(String type) {
     final t = type.toLowerCase();
     if (t.contains('hospital')) return FontAwesomeIcons.truckMedical;
-    if (t.contains('relief') || t.contains('camp')) return FontAwesomeIcons.tent;
-    if (t.contains('safe') || t.contains('space') || t.contains('shelter')) return FontAwesomeIcons.home;
-    if (t.contains('supplies') || t.contains('food')) return FontAwesomeIcons.boxOpen;
+    if (t.contains('relief') || t.contains('camp'))
+      return FontAwesomeIcons.tent;
+    if (t.contains('safe') || t.contains('space') || t.contains('shelter'))
+      return FontAwesomeIcons.home;
+    if (t.contains('supplies') || t.contains('food'))
+      return FontAwesomeIcons.boxOpen;
     return FontAwesomeIcons.handsHelping;
   }
 
@@ -702,166 +724,196 @@ class _HomeState extends State<Home> {
             builder: (BuildContext context, StateSetter setModalState) {
               final items = isHelping ? _giveItems : _needItems;
               return Container(
-            height: MediaQuery.of(context).size.height * 0.75,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-              boxShadow: [
-                BoxShadow(color: Colors.black26, blurRadius: 10, spreadRadius: 2)
-              ],
-            ),
-            child: Column(
-              children: [
-                const SizedBox(height: 12),
-                // Drag handle
-                Container(
-                  width: 44,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(3),
-                  ),
+                height: MediaQuery.of(context).size.height * 0.75,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                  boxShadow: [
+                    BoxShadow(
+                        color: Colors.black26, blurRadius: 10, spreadRadius: 2)
+                  ],
                 ),
-                // Need Help / Give Help toggle inside drawer
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
-                  child: Container(
-                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Color(0xFFEEEEEE),
-                      borderRadius: BorderRadius.circular(30),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 12),
+                    // Drag handle
+                    Container(
+                      width: 44,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(3),
+                      ),
                     ),
-                    child: CupertinoSlidingSegmentedControl<int>(
-                      children: {
-                        0: Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          child: Text(
-                            'Need Help',
-                            style: GoogleFonts.getFont('Lexend',
-                                fontWeight: FontWeight.w700,
-                                fontSize: 15,
-                                color: isHelping ? Colors.grey : Colors.redAccent),
-                          ),
+                    // Need Help / Give Help toggle inside drawer
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+                      child: Container(
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Color(0xFFEEEEEE),
+                          borderRadius: BorderRadius.circular(30),
                         ),
-                        1: Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          child: Text(
-                            'Give Help',
-                            style: GoogleFonts.getFont('Lexend',
-                                fontWeight: FontWeight.w700,
-                                fontSize: 15,
-                                color: isHelping ? Colors.blue : Colors.grey),
-                          ),
-                        ),
-                      },
-                      groupValue: isHelping ? 1 : 0,
-                      onValueChanged: (int? value) {
-                        setState(() { isHelping = value == 1; });
-                        setModalState(() {});
-                      },
-                      backgroundColor: Color(0xFFEEEEEE),
-                      thumbColor: Colors.white,
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 10, 20, 4),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        isHelping ? 'Available Requests' : 'Nearby Assistance',
-                        style: GoogleFonts.getFont(
-                          'Lexend',
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18,
-                          color: Colors.black87,
+                        child: CupertinoSlidingSegmentedControl<int>(
+                          children: {
+                            0: Padding(
+                              padding: EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 6),
+                              child: Text(
+                                'Need Help',
+                                style: GoogleFonts.getFont('Lexend',
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 15,
+                                    color: isHelping
+                                        ? Colors.grey
+                                        : Colors.redAccent),
+                              ),
+                            ),
+                            1: Padding(
+                              padding: EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 6),
+                              child: Text(
+                                'Give Help',
+                                style: GoogleFonts.getFont('Lexend',
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 15,
+                                    color:
+                                        isHelping ? Colors.blue : Colors.grey),
+                              ),
+                            ),
+                          },
+                          groupValue: isHelping ? 1 : 0,
+                          onValueChanged: (int? value) {
+                            setState(() {
+                              isHelping = value == 1;
+                            });
+                            setModalState(() {});
+                          },
+                          backgroundColor: Color(0xFFEEEEEE),
+                          thumbColor: Colors.white,
                         ),
                       ),
-                      Text(
-                        '${items.length} locations',
-                        style: GoogleFonts.getFont(
-                          'Lexend',
-                          fontSize: 13,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Divider(height: 1),
-                Expanded(
-                  child: items.isEmpty
-                      ? Center(
-                          child: Text(
-                            'No locations found',
-                            style: GoogleFonts.getFont('Lexend', color: Colors.grey),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 10, 20, 4),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            isHelping
+                                ? 'Available Requests'
+                                : 'Nearby Assistance',
+                            style: GoogleFonts.getFont(
+                              'Lexend',
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                              color: Colors.black87,
+                            ),
                           ),
-                        )
-                      : ListView.separated(
-                          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          itemCount: items.length,
-                          separatorBuilder: (_, __) => SizedBox(height: 8),
-                          itemBuilder: (context, index) {
-                            final item = items[index];
-                            final double itemLat = (item['location']['lat'] as num).toDouble();
-                            final double itemLng = (item['location']['lng'] as num).toDouble();
-                            final dist = Geolocator.distanceBetween(currentLat, currentLng, itemLat, itemLng);
-                            final distStr = dist < 1000
-                                ? '${dist.toStringAsFixed(0)}m'
-                                : '${(dist / 1000).toStringAsFixed(1)}km';
-                            final String type = (item['type'] ?? '').toString().toUpperCase();
-                            return ListTile(
-                              tileColor: Color(0xFFF7F8FA),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
+                          Text(
+                            '${items.length} locations',
+                            style: GoogleFonts.getFont(
+                              'Lexend',
+                              fontSize: 13,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    Expanded(
+                      child: items.isEmpty
+                          ? Center(
+                              child: Text(
+                                'No locations found',
+                                style: GoogleFonts.getFont('Lexend',
+                                    color: Colors.grey),
                               ),
-                              leading: Container(
-                                padding: EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: (isHelping ? Colors.blue : Colors.redAccent).withOpacity(0.12),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  _getIconForType(type),
-                                  color: isHelping ? Colors.blue : Colors.redAccent,
-                                  size: 18,
-                                ),
-                              ),
-                              title: Text(
-                                type,
-                                style: GoogleFonts.getFont(
-                                  'Lexend',
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                ),
-                              ),
-                              subtitle: Row(
-                                children: [
-                                  Icon(Icons.place, size: 13, color: Colors.grey),
-                                  SizedBox(width: 3),
-                                  Text(
-                                    distStr,
-                                    style: GoogleFonts.getFont(
-                                      'Lexend',
-                                      fontSize: 12,
-                                      color: Colors.grey[700],
+                            )
+                          : ListView.separated(
+                              padding: EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 12),
+                              itemCount: items.length,
+                              separatorBuilder: (_, __) => SizedBox(height: 8),
+                              itemBuilder: (context, index) {
+                                final item = items[index];
+                                final loc =
+                                    item['location'] as Map<String, dynamic>?;
+                                final double itemLat =
+                                    (loc?['lat'] as num?)?.toDouble() ??
+                                        currentLat;
+                                final double itemLng =
+                                    (loc?['lng'] as num?)?.toDouble() ??
+                                        currentLng;
+                                final dist = Geolocator.distanceBetween(
+                                    currentLat, currentLng, itemLat, itemLng);
+                                final distStr = dist < 1000
+                                    ? '${dist.toStringAsFixed(0)}m'
+                                    : '${(dist / 1000).toStringAsFixed(1)}km';
+                                final String rawType =
+                                    (item['type'] ?? '').toString();
+                                final String type = _formatType(rawType);
+                                final String typeUpper = rawType.toUpperCase();
+                                return ListTile(
+                                  tileColor: Color(0xFFF7F8FA),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  leading: Container(
+                                    padding: EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: (isHelping
+                                              ? Colors.blue
+                                              : Colors.redAccent)
+                                          .withOpacity(0.12),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Icon(
+                                      _getIconForType(typeUpper),
+                                      color: isHelping
+                                          ? Colors.blue
+                                          : Colors.redAccent,
+                                      size: 18,
                                     ),
                                   ),
-                                ],
-                              ),
-                              trailing: Icon(Icons.chevron_right, color: Colors.grey),
-                              onTap: () {
-                                Navigator.pop(context);
-                                _showLocationDetails(context, item);
+                                  title: Text(
+                                    type,
+                                    style: GoogleFonts.getFont(
+                                      'Lexend',
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  subtitle: Row(
+                                    children: [
+                                      Icon(Icons.place,
+                                          size: 13, color: Colors.grey),
+                                      SizedBox(width: 3),
+                                      Text(
+                                        distStr,
+                                        style: GoogleFonts.getFont(
+                                          'Lexend',
+                                          fontSize: 12,
+                                          color: Colors.grey[700],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  trailing: Icon(Icons.chevron_right,
+                                      color: Colors.grey),
+                                  onTap: () {
+                                    Navigator.pop(context);
+                                    _showLocationDetails(context, item);
+                                  },
+                                );
                               },
-                            );
-                          },
-                        ),
+                            ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          );
+              );
             },
           );
         },
@@ -874,27 +926,79 @@ class _HomeState extends State<Home> {
   }
 
   Widget _buildTopFloatingBar() {
+    final topPadding = MediaQuery.of(context).padding.top;
     return Container(
-      height: 60,
-      padding: EdgeInsets.symmetric(horizontal: 16),
-      margin: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 10),
-      child: Row(
+      height: 48,
+      margin: EdgeInsets.only(top: topPadding > 0 ? topPadding + 6 : 14),
+      padding: EdgeInsets.symmetric(horizontal: 14),
+      child: Stack(
+        alignment: Alignment.center,
         children: [
-          // Hamburger menu button — tap to open drawer with toggle + assistance list
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(color: Colors.black26, blurRadius: 6, spreadRadius: 1)
-              ],
+          // Hamburger menu button pinned to the left
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(color: Colors.black26, blurRadius: 6, spreadRadius: 1)
+                ],
+              ),
+              child: IconButton(
+                padding: EdgeInsets.zero,
+                icon: Icon(Icons.menu, color: Colors.black87, size: 21),
+                tooltip: 'Menu',
+                onPressed: _showAssistanceDrawer,
+              ),
             ),
-            child: IconButton(
-              icon: Icon(Icons.menu, color: Colors.black87),
-              tooltip: 'Menu',
-              onPressed: _showAssistanceDrawer,
+          ),
+          // Need Help / Give Help Toggle Pill perfectly centered
+          Center(
+            child: Container(
+              padding: EdgeInsets.symmetric(horizontal: 3, vertical: 3),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(30),
+                boxShadow: [
+                  BoxShadow(color: Colors.black26, blurRadius: 8, spreadRadius: 1)
+                ],
+              ),
+              child: CupertinoSlidingSegmentedControl<int>(
+                children: {
+                  0: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+                    child: Text(
+                      'Need Help',
+                      style: GoogleFonts.getFont('Lexend',
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12.5,
+                          color: isHelping ? Colors.grey : Colors.redAccent),
+                    ),
+                  ),
+                  1: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+                    child: Text(
+                      'Give Help',
+                      style: GoogleFonts.getFont('Lexend',
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12.5,
+                          color: isHelping ? Colors.blue : Colors.grey),
+                    ),
+                  ),
+                },
+                groupValue: isHelping ? 1 : 0,
+                onValueChanged: (int? value) {
+                  setState(() {
+                    isHelping = value == 1;
+                    selectedFilter = '';
+                  });
+                },
+                backgroundColor: Color(0xFFEEEEEE),
+                thumbColor: Colors.white,
+              ),
             ),
           ),
         ],
@@ -980,14 +1084,15 @@ class _HomeState extends State<Home> {
 
   Widget recenterBtn() {
     return Positioned(
-      right: 20.0,
-      bottom: 90.0,
+      right: 16.0,
+      bottom: 110.0,
       child: FloatingActionButton(
         mini: false,
         child: Icon(FontAwesomeIcons.streetView, color: Colors.black),
         backgroundColor: Colors.white,
         onPressed: () {
-          js.context.callMethod('updateWindyLocation', [currentLat, currentLng]);
+          js.context
+              .callMethod('updateWindyLocation', [currentLat, currentLng]);
         },
       ),
     );
@@ -995,8 +1100,8 @@ class _HomeState extends State<Home> {
 
   Widget actionBtn(isHelping, selectedFilter) {
     return Positioned(
-      right: 20.0,
-      bottom: 20.0,
+      right: 16.0,
+      bottom: 45.0,
       child: buildFloatingActionButton(
         isHelping: isHelping,
         selectedFilter: selectedFilter,
@@ -1037,9 +1142,13 @@ class _HomeState extends State<Home> {
           itemCount: items.length,
           itemBuilder: (context, index) {
             final item = items[index];
-            final double itemLat = (item['location']['lat'] as num).toDouble();
-            final double itemLng = (item['location']['lng'] as num).toDouble();
-            final dist = Geolocator.distanceBetween(currentLat, currentLng, itemLat, itemLng);
+            final loc2 = item['location'] as Map<String, dynamic>?;
+            final double itemLat =
+                (loc2?['lat'] as num?)?.toDouble() ?? currentLat;
+            final double itemLng =
+                (loc2?['lng'] as num?)?.toDouble() ?? currentLng;
+            final dist = Geolocator.distanceBetween(
+                currentLat, currentLng, itemLat, itemLng);
             final distStr = dist < 1000
                 ? '${dist.toStringAsFixed(0)}m'
                 : '${(dist / 1000).toStringAsFixed(1)}km';
