@@ -31,6 +31,7 @@ dependencies:
 dependency_overrides:
   web: 0.5.1
   http: ^1.2.0
+  win32: 5.15.0
 
 dev_dependencies:
   flutter_test:
